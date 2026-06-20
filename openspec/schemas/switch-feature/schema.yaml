@@ -1,0 +1,210 @@
+name: switch-feature
+version: 1
+description: Switchboard feature workflow (plan → proposal → dependencies → specs → design → tasks)
+artifacts:
+  - id: plan
+    generates: plan.md
+    description: Durable record of the planning interview and architecture decisions
+    template: plan.md
+    instruction: |
+      Create the plan document — the durable record of the stage-1 planning interview
+      (normally conducted via the /switch-plan skill). It captures WHY and at WHAT
+      architectural shape, before the proposal fixes scope.
+
+      Sections:
+      - **Problem**: the problem or opportunity in the user's terms.
+      - **Architecture summary**: the agreed target architecture for this change, in
+        prose. Reference existing systems by their LikeC4 names where possible.
+      - **Plan page**: link to the `docs/plans/<area>/<topic>.md` page driving this
+        change, or state "None — this plan.md is the complete plan." A plan page is
+        only warranted for larger features or multi-change programmes. If a page is
+        linked, its `openspec-changes` frontmatter MUST list this change, and any
+        sibling changes it lists MUST be consulted for consistency.
+      - **Planned architecture**: if the change has architectural impact, model the
+        target state in `docs/dev/Architecture/Planned/{{change-name}}.c4` — inside the
+        single global LikeC4 project, grafting onto existing elements with `extend` and
+        full FQNs, every addition tagged `#todo`, view ids prefixed with the change
+        name. List here the file plus the element FQNs and view ids it adds (this list
+        makes completion and abandonment mechanical). Otherwise state "None — no
+        architectural impact."
+      - **Decisions** and **Open questions**.
+
+      Validate any LikeC4 edits (from the repo root):
+      `pnpm --dir site exec likec4 validate --no-layout ../docs/dev/Architecture`
+    requires: []
+  - id: proposal
+    generates: proposal.md
+    description: Initial proposal document outlining the change
+    template: proposal.md
+    instruction: |
+      Create the proposal document that establishes WHY this change is needed. Read
+      plan.md first — the proposal narrows the plan into committed scope.
+
+      Sections:
+      - **Why**: 1-2 sentences on the problem or opportunity.
+      - **What Changes**: bullet list of changes. Be specific about new capabilities,
+        modifications, or removals. Mark breaking changes with **BREAKING**.
+      - **Capabilities**: identify which specs will be created or modified:
+        - **New Capabilities**: each becomes a new `specs/<name>/spec.md`. Use
+          kebab-case names. Research existing specs in `openspec/specs/` first.
+        - **Modified Capabilities**: existing capabilities whose REQUIREMENTS change.
+          Use the existing spec folder names. Leave empty if none.
+      - **Impact**: affected code, APIs, dependencies, systems.
+
+      The Capabilities section is the contract between proposal and specs phases.
+      Keep it concise (1-2 pages); implementation detail belongs in design.md.
+    requires:
+      - plan
+  - id: dependencies
+    generates: dependencies.md
+    description: Machine-verifiable list of changes that must complete first
+    template: dependencies.md
+    instruction: |
+      Create the dependency declaration for this change. The frontmatter `depends-on`
+      lists the names of other OpenSpec changes (active or archived) that must complete
+      before THIS change may be implemented. An empty list is valid and common.
+
+      A dependency is satisfied when the named change is archived (a folder under
+      `openspec/changes/archive/`) or all of its tasks are complete. Implementation is
+      gated on this file: it must not begin while any listed change is unsatisfied, and
+      this change must not archive while any listed change is unarchived.
+
+      Record every ordering constraint HERE — never as prose in tasks.md. Optional
+      notes explaining each dependency go in the body below the frontmatter.
+
+      Check for capability overlap while you are here: if another active change carries
+      delta specs for the same capabilities (`openspec/changes/*/specs/<capability>/`),
+      either order the two changes via `depends-on` or ensure a shared plan page
+      arbitrates the split.
+    requires:
+      - proposal
+  - id: specs
+    generates: specs/**/*.md
+    description: Detailed specifications for the change
+    template: spec.md
+    instruction: |
+      Create specification files that define WHAT the system should do — one spec file
+      per capability listed in the proposal's Capabilities section.
+
+      - New capabilities: specs/<capability>/spec.md with the exact kebab-case name
+        from the proposal.
+      - Modified capabilities: use the existing folder name from openspec/specs/.
+
+      Delta operations (## headers): **ADDED**, **MODIFIED** (must include the FULL
+      updated requirement content), **REMOVED** (must include **Reason** and
+      **Migration**), **RENAMED** (FROM:/TO:).
+
+      Format requirements:
+      - Each requirement: `### Requirement: <name>`, normative SHALL/MUST wording, and
+        the SHALL/MUST must appear in the requirement's first line.
+      - Each scenario: `#### Scenario: <name>` (exactly 4 hashtags) with
+        `- **WHEN**`/`- **THEN**` bullets. Every requirement needs at least one
+        scenario, and scenarios should be testable and written to be executable.
+
+      MODIFIED workflow: copy the ENTIRE existing requirement block from
+      openspec/specs/<capability>/spec.md, then edit. Partial content loses detail at
+      sync. If adding new concerns without changing existing behaviour, use ADDED.
+
+      Cross-change consistency: if plan.md links a plan page listing multiple changes,
+      re-read that page AND the sibling changes' proposals and delta specs before
+      writing. Record decisions that affect siblings on the plan page, not here.
+    requires:
+      - proposal
+  - id: design
+    generates: design.md
+    description: Technical design document with implementation details
+    template: design.md
+    instruction: |
+      Create the design document that explains HOW to implement the change.
+
+      Sections:
+      - **Context**: background, current state, constraints.
+      - **Goals / Non-Goals**.
+      - **Decisions**: key technical choices with rationale and alternatives
+        considered.
+      - **Testing strategy** (required): how this change's capabilities are tested —
+        the intended unit and integration/E2E surface — and the test-harness gap
+        assessment — does a suitable harness exist? What must be built or modified
+        before feature work can be tested efficiently? Gaps found here become the
+        leading "Test infrastructure" task group.
+      - **Risks / Trade-offs**: [Risk] → Mitigation.
+      - **Migration Plan** and **Open Questions** (if applicable).
+
+      Focus on architecture and approach, not line-by-line implementation.
+    requires:
+      - proposal
+  - id: docs-migration
+    generates: docs-migration.md
+    description: Ledger of documentation to author, merge, retire, or discard
+    template: docs-migration.md
+    instruction: |
+      Create the documentation-migration ledger: where this change's planning
+      documentation graduates to, and what permanent documentation the change must
+      author. Decide destinations NOW, while design context is rich — never leave the
+      decision to archive time.
+
+      The ledger is a Markdown table with exactly these columns:
+      `| Source | Destination | Action | Status |`
+
+      One row per documentation movement:
+      - **Source**: a Plans page (or section), plan.md content, or `—` for brand-new
+        documentation with no planning source.
+      - **Destination**: the permanent docs path (`docs/dev/...` or `docs/user/...`),
+        or `—` for retire/discard rows.
+      - **Action**: EXACTLY one of
+        - `author → <path>` — a new permanent page this change must write. Authored
+          DURING IMPLEMENTATION (a tasks.md task), verified to exist at archive.
+        - `merge → <path>` — content folded into an existing page during
+          implementation.
+        - `retire — <how>` — a Plans page deleted or trimmed at archive (trim when its
+          openspec-changes frontmatter lists other still-active changes).
+        - `discard — <reason>` — planning content that is deliberately ephemeral.
+      - **Status**: `open` (planned) or `resolved` (action executed/confirmed). Every
+        row MUST reach `resolved` before the change can be archived.
+
+      Every Plans page linked in plan.md MUST have a row. If the change has no
+      documentation impact at all, replace the table with the sentence
+      `No documentation impact — <reason>.` — absence of this file is never valid.
+    requires:
+      - design
+  - id: tasks
+    generates: tasks.md
+    description: Implementation checklist with trackable tasks
+    template: tasks.md
+    instruction: |
+      Create the task list that breaks down the implementation work.
+
+      **Follow the template exactly** — the apply phase parses `- [ ] X.Y` checkboxes.
+
+      Ordering rules:
+      - If design.md's test-harness gap assessment found gaps, the FIRST task group
+        MUST be `## 1. Test infrastructure`, building or modifying the harness before
+        any feature work. Omit the group only when the assessment concluded existing
+        harnesses suffice.
+      - Red-green ordering throughout: the task that writes the failing test precedes
+        the task that implements to green. Refactor tasks follow green.
+      - Every `author →` and `merge →` row in docs-migration.md gets a corresponding
+        documentation task here.
+      - Group related tasks under ## numbered headings; order groups by dependency.
+      - Tasks must be small enough to complete in one session and verifiable.
+
+      Ordering constraints on OTHER changes belong in dependencies.md, never here.
+    requires:
+      - specs
+      - design
+      - dependencies
+      - docs-migration
+apply:
+  requires:
+    - tasks
+  tracks: tasks.md
+  instruction: |
+    GATE before any implementation: read dependencies.md. Every change in `depends-on`
+    must be archived (under openspec/changes/archive/) or have all its tasks complete.
+    If any is not, STOP and report the blocking change(s).
+    Read context files, work through pending tasks red-green (the failing test comes
+    first), mark complete as you go. Pause if you hit blockers or need clarification.
+    As documentation is authored or merged, resolve the corresponding rows in
+    docs-migration.md (retire/discard rows resolve at archive).
+    If implementation surfaces requirements or architectural impact beyond the
+    artifacts, pause and update the artifacts before continuing.

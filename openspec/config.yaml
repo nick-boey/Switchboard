@@ -1,0 +1,57 @@
+schema: switch-feature
+
+# Project context (optional). Shown to AI when creating artifacts.
+context: |
+  Development workflow (see docs/dev/Contributing/development-workflow.md):
+  - Changes are created and resumed through the /switch-change router skill, which
+    classifies work by SCALE, not category: switch-fix only when the change is a
+    correction toward already-intended behaviour, needs no new UI pattern
+    exploration, has no architectural impact, and is roughly single-session scale.
+    Otherwise switch-feature, or switch-feature-ui for changes touching a web UI surface
+    that needs pattern exploration.
+  - Escalation is first-class: if work on an switch-fix change surfaces new
+    functionality, UI exploration, or architectural impact, STOP, edit the change's
+    .openspec.yaml schema to switch-feature(-ui), and backfill the newly required
+    artifacts. There is no downgrade path.
+  - Dependencies between changes are recorded ONLY in the change's dependencies.md
+    frontmatter (depends-on list) — never as prose in tasks.md. Implementation and
+    archive are gated on it.
+  - Cross-change consistency: a docs/plans page may drive several concurrent
+    changes via its openspec-changes frontmatter. Before writing or modifying delta
+    specs for such a change, re-read the plan page AND the sibling changes'
+    proposals and delta specs; record decisions that affect siblings on the plan
+    page. Capability overlap between active changes requires a shared plan page or
+    an explicit depends-on ordering.
+  - Planned architecture lives in docs/dev/Architecture/Planned/<change-name>.c4
+    inside the single global LikeC4 project: extend existing elements with full
+    FQNs, tag every addition #todo, prefix view ids with the change name, and list
+    the added element/view ids in the change's plan.md.
+
+  UI prototyping convention (Switchboard's web UI):
+  - Switchboard's web UI is the component workbench (Storybook) for the app.
+  - Changes that touch a user-facing web surface SHOULD be created with the
+    `switch-feature-ui` schema, which adds a `prototypes.md` ledger artifact.
+  - Sketch UI patterns BEFORE recording design decisions, using the
+    `/switch-ui-prototype` skill. Prototype stories live only under
+    `src/prototypes/<change-name>/`, use `definePrototypeMeta`, and are
+    quarantined from visual-regression snapshots, the unit-test run, autodocs, the
+    published package API, and production imports.
+  - Every prototype on disk gets a row in the change's `prototypes.md`. At archive
+    time the `/switch-openspec-archive` skill reconciles disk against the ledger and
+    executes mechanical dispositions (promote → move, or delete; promotion is the
+    default expectation). Porting prototype code into production is implementation
+    work and belongs in tasks.md.
+
+# Per-artifact rules (optional).
+rules:
+  proposal:
+    - For a UI-facing change, note which prototypes (under
+      src/prototypes/<change-name>/) explore the surface, or state
+      why none are needed. Prefer creating the change with the `switch-feature-ui`
+      schema.
+  specs:
+    - SHALL/MUST must appear in the first line of every requirement description.
+    - Write scenarios to be testable and executable.
+  tasks:
+    - Ordering constraints on other changes belong in dependencies.md, never in
+      tasks.md.

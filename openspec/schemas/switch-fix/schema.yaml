@@ -1,0 +1,98 @@
+name: switch-fix
+version: 1
+description: Switchboard fix workflow for bugs and small modifications (proposal → dependencies → specs → tasks)
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Proposal with root cause analysis
+    template: proposal.md
+    instruction: |
+      Create the proposal for this fix. An switch-fix change is a small correction toward
+      already-intended behaviour: no new functionality, no new UI pattern exploration,
+      no architectural impact, roughly single-session scale. If ANY of those fail,
+      STOP — this change must use the switch-feature or switch-feature-ui schema instead
+      (edit .openspec.yaml's `schema:` and backfill the newly required artifacts).
+
+      Sections:
+      - **Why**: 1-2 sentences — the observed defect or needed modification.
+      - **Root cause**: what actually causes the behaviour, traced to the code or
+        configuration responsible. Investigate before writing; do not guess.
+      - **What Changes**: the correction, specifically.
+      - **Capabilities**: which existing capability's spec gains the regression
+        requirement or a small MODIFIED requirement. Use existing spec names from
+        openspec/specs/. A new capability folder is allowed only as the home for the
+        regression requirement when no spec covers the area yet.
+      - **Impact**: affected code and systems.
+    requires: []
+  - id: dependencies
+    generates: dependencies.md
+    description: Machine-verifiable list of changes that must complete first
+    template: dependencies.md
+    instruction: |
+      Create the dependency declaration for this change. The frontmatter `depends-on`
+      lists the names of other OpenSpec changes (active or archived) that must complete
+      before THIS change may be implemented. An empty list is valid and common.
+
+      A dependency is satisfied when the named change is archived (a folder under
+      `openspec/changes/archive/`) or all of its tasks are complete. Implementation is
+      gated on this file: it must not begin while any listed change is unsatisfied, and
+      this change must not archive while any listed change is unarchived.
+
+      Record every ordering constraint HERE — never as prose in tasks.md.
+    requires:
+      - proposal
+  - id: specs
+    generates: specs/**/*.md
+    description: Delta spec containing the regression scenario
+    template: spec.md
+    instruction: |
+      Create the delta spec for the fix. It MUST contain a regression scenario: a
+      `#### Scenario:` that reproduces the defect and states the corrected outcome.
+
+      - For behaviour the spec already describes incorrectly or incompletely: use
+        **MODIFIED Requirements**, copying the ENTIRE existing requirement block from
+        openspec/specs/<capability>/spec.md and editing it.
+      - For behaviour no requirement covers: use **ADDED Requirements** with the
+        regression scenario.
+
+      Format: `### Requirement: <name>` with SHALL/MUST in the first line; scenarios
+      use exactly 4 hashtags and `- **WHEN**`/`- **THEN**` bullets. Write the regression
+      test first, per TDD, and write scenarios to be executable.
+
+      If the delta turns out to describe NEW functionality rather than a correction,
+      STOP and escalate the schema to switch-feature(-ui).
+    requires:
+      - proposal
+  - id: tasks
+    generates: tasks.md
+    description: Implementation checklist, failing test first
+    template: tasks.md
+    instruction: |
+      Create the task list. **Follow the template exactly** — the apply phase parses
+      `- [ ] X.Y` checkboxes.
+
+      The FIRST task is always writing the failing test that reproduces the defect
+      (red), exercising the code through its public API. Then the minimal fix (green),
+      then refactor tasks if needed. Keep the list short — an switch-fix change is
+      single-session scale.
+
+      If the corrected behaviour is described in existing documentation
+      (docs/dev/ or docs/user/), include a task to update the affected pages.
+
+      Ordering constraints on OTHER changes belong in dependencies.md, never here.
+    requires:
+      - specs
+      - dependencies
+apply:
+  requires:
+    - tasks
+  tracks: tasks.md
+  instruction: |
+    GATE before any implementation: read dependencies.md. Every change in `depends-on`
+    must be archived (under openspec/changes/archive/) or have all its tasks complete.
+    If any is not, STOP and report the blocking change(s).
+    Work red-green: run the failing test first, make it pass with the minimal change,
+    refactor while green. Mark tasks complete as you go.
+    If the work surfaces new functionality, UI exploration, or architectural impact,
+    STOP — escalate the schema in .openspec.yaml to switch-feature(-ui), backfill the
+    newly required artifacts, then continue.
