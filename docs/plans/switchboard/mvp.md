@@ -1,7 +1,6 @@
 ---
 title: "Plan: Switchboard MVP"
 openspec-changes:
-  - prototype-storybook-harness
   - ui-prototypes-mvp
   - repo-clone-browse
   - worktree-management
@@ -131,7 +130,7 @@ prose in `tasks.md`).
 |---|--------|--------|---------|
 | **0** | **runtime spike** *(throwaway investigation — not an OpenSpec change)* | — | Prove the riskiest runtime assumptions **before** `foundations` bakes them in: Tailscale-in-Docker (`serve`, bind), the **Tailscale-identity-header auth path** behind `serve`, config-volume persistence, **Claude credential persistence** in a container, and process/tmux supervision. Output: a findings note under `docs/dev/spikes/`; throwaway code lives outside the monorepo. Go/no-go on the assumptions feeds `foundations` design. |
 | 1 | `foundations` ✅ *archived* | switch-feature | Monorepo, TS, web shell + Mantine + retro design tokens, Storybook, Hono skeleton + RPC wiring, **auth gate + loopback bind + CORS + bind-address tests**, **RuntimeContext** abstraction, Vitest, Playwright E2E harness (temp-git fixture), Just, OTel instrumentation + redaction policy, `site/` + LikeC4, `shared` package. **Builds the test harness everything else needs.** |
-| 1b | `prototype-storybook-harness` | switch-feature | Stand up the **dedicated prototype-viewing Storybook config** (renders `src/prototypes/**` while the production config keeps them excluded), the `definePrototypeMeta` helper, the location-based indexer (titles + quarantine tags), and a `storybook:prototypes` script. Foundations deferred this to "the `switch-ui-prototype` workflow"; it is the prerequisite that makes the prototyping stage runnable. |
+| 1b | `prototype-storybook-harness` ✅ *archived* | switch-feature | Stand up the **dedicated prototype-viewing Storybook config** (renders `src/prototypes/**` while the production config keeps them excluded), the `definePrototypeMeta` helper, the location-based indexer (titles + quarantine tags), and a `storybook:prototypes` script. Foundations deferred this to "the `switch-ui-prototype` workflow"; it is the prerequisite that makes the prototyping stage runnable. |
 | 2 | `ui-prototypes-mvp` | switch-feature-ui | Lightweight **upfront** prototypes (hybrid strategy): the design language + core screens (repo browser/clone, worktree list/create, session list/launch), desktop + mobile. **Confirmation gate** for user stories before backend work. |
 | 3 | `repo-clone-browse` | switch-feature | List GitHub repos/orgs (PAT) + bare clone → `repos/<repo-id>/.bare` + list cloned repos. |
 | 4 | `worktree-management` | switch-feature | Create worktree + branch → `repos/<repo-id>/worktrees/<wt-id>`; canonical ID scheme; "branch exists on remote" vs "new branch". |
