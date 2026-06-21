@@ -8,83 +8,188 @@ import {
   useMantineTheme,
   type BoxProps,
 } from '@mantine/core';
-import type { ReactNode } from 'react';
-import { JackButton } from '../../components/JackButton';
+import type { CSSProperties, ReactNode } from 'react';
 import type { SwitchboardTokens } from '../../theme/theme';
 
 /**
- * Proposed DARK-panel finish (gate decision: "true dark panels"). The production `EmbossedPanel`
- * forces cream bakelite in every scheme; here we sketch the second finish a dark mode would add —
- * a charcoal bakelite surface with re-tuned emboss and light text. Kept in the prototype so the
- * gate can see it; turning this into a real `EmbossedPanel` dark variant + theme tokens is
- * implementation work for the feature changes, not this skill.
+ * Shared sketch kit for the `ui-prototypes-mvp` prototypes — the FLAT, abstract take on the '50s
+ * switchboard language (the skeuomorphic emboss pass is in git history at commit 4256e99). Same
+ * influences — bakelite/patina/brass/signal palette, plug + screw + nameplate motifs — but rendered
+ * as flat surfaces with light outlines instead of heavy emboss shadows:
+ *
+ *  - Panels: very slightly rounded, 1px outline, four small corner "screw" dots (raised cards only).
+ *  - Plug: a thin outer ring + a thick inner disc coloured by status (the line/session indicator).
+ *  - Inset titles (EmbossedLabel): a subtle recessed nameplate — used ONLY inside raised cards;
+ *    elsewhere a plain SectionTitle differentiates sections.
+ *
+ * These are NOT production primitives; promoting any into `src/components/` + `theme.ts` is
+ * implementation work owned by the feature changes. Plain `.tsx` (not `*.stories.tsx`) so the
+ * workbench indexer ignores it.
  */
+
+/** Very slightly rounded — the house panel radius for the flat language. */
+export const PANEL_RADIUS = 6;
+
 const DARK_SURFACE = '#2a241d';
-const DARK_EMBOSS =
-  'inset 0 1px 0 rgba(255,255,255,0.09), inset 0 -2px 4px rgba(0,0,0,0.55), 0 3px 8px rgba(0,0,0,0.6)';
-const DARK_INSET = 'inset 0 2px 6px rgba(0,0,0,0.62), inset 0 -1px 0 rgba(255,255,255,0.07)';
+const DARK_WELL = '#211c16';
+
+export type Corner = 'tl' | 'tr' | 'bl' | 'br';
+const ALL_CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br'];
+
+function Screws({ dark, corners }: { dark: boolean; corners: Corner[] }) {
+  const bg = dark ? '#15110c' : '#e7d9bd';
+  const br = dark ? 'rgba(255,255,255,0.20)' : 'rgba(60,45,20,0.38)';
+  const inset = 6;
+  const base: CSSProperties = {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    background: bg,
+    border: `1px solid ${br}`,
+  };
+  const pos: Record<Corner, CSSProperties> = {
+    tl: { top: inset, left: inset },
+    tr: { top: inset, right: inset },
+    bl: { bottom: inset, left: inset },
+    br: { bottom: inset, right: inset },
+  };
+  return (
+    <>
+      {corners.map((c) => (
+        <span key={c} style={{ ...base, ...pos[c] }} />
+      ))}
+    </>
+  );
+}
 
 export interface PanelProps extends BoxProps {
   children?: ReactNode;
-  /** Render a pressed (inset) well instead of a raised surface. */
+  /** Recessed well (subtle inset background) instead of a raised card. Wells carry no screws. */
   pressed?: boolean;
+  /** Show corner screws. Defaults to true for raised cards, false for wells. */
+  screws?: boolean;
+  /** Which corners get screws (default all four) — used to collapse screws when panels are stacked. */
+  corners?: Corner[];
   'data-testid'?: string;
 }
 
 /**
- * The prototype's scheme-adaptive embossed panel: cream bakelite in light, charcoal bakelite in
- * dark. Mirrors the production `EmbossedPanel` API (`pressed`, `p`, Box props) so the screens read
- * like real code, but adds the dark finish the gate asked for. The screens build every region from
- * this.
+ * The flat embossed-bakelite panel: a slightly rounded surface with a 1px outline and (for raised
+ * cards) four corner screws. Scheme-adaptive — cream in light, charcoal in dark. Every screen
+ * region is one of these.
  */
-export function Panel({ children, pressed = false, p = 'lg', style, ...rest }: PanelProps) {
+export function Panel({
+  children,
+  pressed = false,
+  screws,
+  corners = ALL_CORNERS,
+  p = 'lg',
+  style,
+  ...rest
+}: PanelProps) {
   const theme = useMantineTheme();
-  const tokens = theme.other as SwitchboardTokens;
   const dark = useComputedColorScheme('light') === 'dark';
+  const showScrews = (screws ?? !pressed) && corners.length > 0;
+  const surface = pressed
+    ? dark
+      ? DARK_WELL
+      : 'rgba(60,45,20,0.05)'
+    : dark
+      ? DARK_SURFACE
+      : theme.colors.bakelite[0];
+  const border = pressed
+    ? dark
+      ? 'rgba(0,0,0,0.45)'
+      : 'rgba(60,45,20,0.14)'
+    : dark
+      ? 'rgba(255,255,255,0.13)'
+      : 'rgba(60,45,20,0.22)';
   return (
     <Box
       p={p}
       style={{
-        borderRadius: theme.radius.md,
-        background: dark ? DARK_SURFACE : theme.colors.bakelite[1],
-        boxShadow: pressed
-          ? dark
-            ? DARK_INSET
-            : tokens.embossInset
-          : dark
-            ? DARK_EMBOSS
-            : tokens.embossSurface,
+        position: 'relative',
+        background: surface,
+        border: `1px solid ${border}`,
+        borderRadius: PANEL_RADIUS,
         color: dark ? theme.colors.bakelite[1] : theme.black,
+        boxShadow: pressed ? 'inset 0 1px 2px rgba(0,0,0,0.10)' : 'none',
         ...style,
       }}
       {...rest}
     >
+      {showScrews && <Screws dark={dark} corners={corners} />}
       {children}
     </Box>
   );
 }
 
+export type PlugStatus = 'running' | 'idle' | 'working' | 'error' | 'off';
+
 /**
- * Shared sketch components for the `ui-prototypes-mvp` prototypes. These are NOT production
- * primitives — they are candidate '50s-switchboard parts (an indicator lamp, an engraved
- * nameplate, a device frame) that the gallery and the three flow screens reuse so the metaphor
- * stays consistent across sketches. Promotion of any of these into `src/components/` is
- * implementation work owned by the feature changes, not this skill.
- *
- * This is a plain `.tsx` (not `*.stories.tsx`), so the workbench indexer ignores it and it never
- * appears in the sidebar; it is also excluded from the unit run with the rest of the folder.
+ * The plug/jack — a thin outer ring around a thick inner disc, the disc coloured by status (plan's
+ * line/session indicator). Replaces the skeuomorphic socket; reads as an abstract patch point.
  */
+export function Plug({
+  status = 'idle',
+  size = 20,
+  label,
+}: {
+  status?: PlugStatus;
+  size?: number;
+  label?: string;
+}) {
+  const theme = useMantineTheme();
+  const dark = useComputedColorScheme('light') === 'dark';
+  const ring = dark ? 'rgba(255,255,255,0.5)' : 'rgba(60,45,20,0.55)';
+  const inner: Record<PlugStatus, string> = {
+    running: theme.colors.patina[6],
+    working: theme.colors.brass[6],
+    error: theme.colors.signal[6],
+    idle: dark ? theme.colors.bakelite[7] : theme.colors.bakelite[4],
+    off: 'transparent',
+  };
+  return (
+    <span
+      role={label ? 'img' : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        border: `1.5px solid ${ring}`,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: 'none',
+      }}
+    >
+      <span
+        style={{
+          width: size * 0.56,
+          height: size * 0.56,
+          borderRadius: '50%',
+          background: inner[status],
+          border: status === 'off' ? `1px solid ${ring}` : undefined,
+        }}
+      />
+    </span>
+  );
+}
 
 export type LampColor = 'signal' | 'patina' | 'brass';
 
 /**
- * A domed glass panel-lamp. `lit` makes it glow (line busy / connected / error, depending on
- * `color`); unlit reads as a dark, dead bulb. The signature "is something happening" indicator.
+ * A flat status dot — a small filled circle with a thin ring, coloured by `color`. The lightweight
+ * inline status marker for ledger rows, list items, and empty states. (Flat replacement for the
+ * old glowing lamp; name kept so existing stories keep working.)
  */
 export function IndicatorLamp({
   color = 'signal',
   lit = false,
-  size = 14,
+  size = 12,
   label,
 }: {
   color?: LampColor;
@@ -105,43 +210,36 @@ export function IndicatorLamp({
         borderRadius: '50%',
         display: 'inline-block',
         flex: 'none',
-        background: lit
-          ? `radial-gradient(circle at 50% 32%, ${hue[1]} 0 26%, ${hue[4]} 56%, ${hue[7]} 100%)`
-          : `radial-gradient(circle at 50% 32%, ${hue[8]} 0 40%, ${hue[9]} 100%)`,
-        boxShadow: lit
-          ? `0 0 ${size * 0.55}px ${size * 0.2}px ${hue[4]}, inset 0 1px 1px rgba(255,255,255,0.55)`
-          : 'inset 0 1px 2px rgba(0,0,0,0.55)',
-        border: '1px solid rgba(60,45,20,0.45)',
+        background: lit ? hue[5] : 'transparent',
+        border: `1px solid ${lit ? hue[6] : hue[7]}`,
       }}
     />
   );
 }
 
 /**
- * An engraved brass nameplate — recessed strip, uppercase tracked type. Used for field labels and
- * section captions so headings read as machined panel engraving rather than web text.
+ * A flat inset nameplate — a subtly recessed strip with uppercase tracked type. The "inset title"
+ * the brief keeps, used ONLY inside raised cards. For section headers outside a raised card, use
+ * `SectionTitle` (plain text) instead.
  */
 export function EmbossedLabel({ children, ...rest }: { children: ReactNode } & BoxProps) {
   const theme = useMantineTheme();
-  const tokens = theme.other as SwitchboardTokens;
   const dark = useComputedColorScheme('light') === 'dark';
   return (
     <Box
-      px={10}
-      py={3}
+      px={8}
+      py={2}
       style={{
         display: 'inline-block',
-        // Light: a bright brass plate with dark engraving. Dark: letters engraved into the panel
-        // and filled with brass — the plate recedes so it reads on the charcoal finish.
-        background: dark ? 'rgba(0,0,0,0.28)' : theme.colors.brass[3],
-        borderRadius: theme.radius.xs,
-        boxShadow: dark ? DARK_INSET : tokens.embossInset,
-        color: dark ? theme.colors.brass[4] : theme.colors.brass[9],
+        background: dark ? 'rgba(0,0,0,0.22)' : 'rgba(60,45,20,0.06)',
+        border: `1px solid ${dark ? 'rgba(0,0,0,0.30)' : 'rgba(60,45,20,0.12)'}`,
+        borderRadius: 4,
+        color: dark ? theme.colors.brass[4] : theme.colors.brass[8],
         textTransform: 'uppercase',
-        letterSpacing: '0.16em',
-        fontSize: '0.68rem',
+        letterSpacing: '0.14em',
+        fontSize: '0.66rem',
         fontWeight: 700,
-        lineHeight: 1.5,
+        lineHeight: 1.6,
       }}
       {...rest}
     >
@@ -150,10 +248,18 @@ export function EmbossedLabel({ children, ...rest }: { children: ReactNode } & B
   );
 }
 
+/** A plain-text section/group header — used to differentiate groups OUTSIDE raised cards. */
+export function SectionTitle({ children, ...rest }: { children: ReactNode } & BoxProps) {
+  return (
+    <Text fz="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.14em' }} {...rest}>
+      {children}
+    </Text>
+  );
+}
+
 /**
- * Frames a screen sketch as a device so mobile and desktop variants read at a glance. `width`
- * sets the viewport (e.g. 390 for a phone, 960 for desktop); the ground adapts to the colour
- * scheme so the bakelite panels sit on an operator-cabinet surface.
+ * Frames a screen sketch as a device so mobile and desktop variants read at a glance. `width` sets
+ * the viewport; the ground adapts to the colour scheme. Light brass outline, minimal shadow.
  */
 export function DeviceFrame({
   width,
@@ -171,11 +277,11 @@ export function DeviceFrame({
       style={{
         width,
         maxWidth: '100%',
-        borderRadius: theme.radius.lg,
+        borderRadius: PANEL_RADIUS + 2,
         overflow: 'hidden',
         background: 'var(--mantine-color-body)',
-        boxShadow: '0 12px 30px rgba(20,15,5,0.45), inset 0 0 0 1px rgba(60,45,20,0.25)',
-        border: `2px solid ${theme.colors.brass[7]}`,
+        boxShadow: '0 6px 18px rgba(20,15,5,0.22)',
+        border: `1px solid ${theme.colors.brass[7]}`,
       }}
     >
       {label && (
@@ -200,9 +306,9 @@ export function DeviceFrame({
 }
 
 /**
- * The in-screen app chrome shared by all three flow screens: a patina brand bar (jack + tracked
+ * The in-screen app chrome shared by all three flow screens: a patina brand bar (plug + tracked
  * wordmark + an optional right-hand status slot) over a body on the room-coloured ground. The body
- * grows with content (no internal scroll) so a static sketch shows the whole screen at once.
+ * grows with content so a static sketch shows the whole screen at once. `toast` overlays the bottom.
  */
 export function AppFrame({
   title = 'Switchboard',
@@ -212,7 +318,6 @@ export function AppFrame({
 }: {
   title?: string;
   status?: ReactNode;
-  /** A transient overlay anchored to the bottom of the frame (e.g. the session-handoff toast). */
   toast?: ReactNode;
   children: ReactNode;
 }) {
@@ -231,9 +336,7 @@ export function AppFrame({
         }}
       >
         <Group gap="sm" wrap="nowrap">
-          <Box style={{ transform: 'scale(0.7)', transformOrigin: 'left center' }}>
-            <JackButton label="Operator line" active />
-          </Box>
+          <Plug status="running" size={18} label="Operator line" />
           <Text
             fw={700}
             tt="uppercase"
@@ -257,9 +360,8 @@ export function AppFrame({
 }
 
 /**
- * A transient snackbar — used for the session-handoff instruction (plan Decision 7): after a
- * session launches, tell the operator to drive the conversation from the official Claude mobile
- * app. A left lamp in `tone`, a title, body copy, and a dismiss. Rendered via AppFrame's `toast`.
+ * A transient snackbar — the session-handoff instruction (plan Decision 7). A left status accent, a
+ * title, body copy, and a dismiss. No screws (a snackbar is not a bolted plate).
  */
 export function Toast({
   tone = 'patina',
@@ -272,10 +374,10 @@ export function Toast({
 }) {
   const theme = useMantineTheme();
   return (
-    <Panel p="sm" style={{ borderLeft: `4px solid ${theme.colors[tone][6]}` }}>
+    <Panel p="sm" screws={false} style={{ borderLeft: `4px solid ${theme.colors[tone][6]}` }}>
       <Group gap="sm" wrap="nowrap" align="flex-start">
         <Box mt={3}>
-          <IndicatorLamp color={tone} lit size={14} label={title} />
+          <IndicatorLamp color={tone} lit size={12} label={title} />
         </Box>
         <Box style={{ flex: 1, minWidth: 0 }}>
           <Text fz="sm" fw={700}>
@@ -325,7 +427,7 @@ const BAR_COLOR: Record<OperationStatus, string> = {
 /**
  * The operation ledger (plan Decision 3): the running record of long operations — clone, worktree
  * create, session launch — that every flow screen surfaces. A `locked` ledger shows the "LINE BUSY"
- * lamp, the single-writer lock that gates further mutating actions while one is in flight.
+ * marker, the single-writer lock that gates further mutating actions while one is in flight.
  */
 export function OperationLedger({ ops, locked = false }: { ops: Operation[]; locked?: boolean }) {
   return (
@@ -334,7 +436,7 @@ export function OperationLedger({ ops, locked = false }: { ops: Operation[]; loc
         <EmbossedLabel>Operation ledger</EmbossedLabel>
         {locked && (
           <Group gap={6} align="center">
-            <IndicatorLamp color="signal" lit size={11} label="line busy" />
+            <IndicatorLamp color="signal" lit size={10} label="line busy" />
             <Text fz={11} fw={700} tt="uppercase" c="signal.7" style={{ letterSpacing: '0.12em' }}>
               Line busy
             </Text>
@@ -350,13 +452,11 @@ export function OperationLedger({ ops, locked = false }: { ops: Operation[]; loc
                 key={op.id}
                 py={8}
                 px={6}
-                style={{
-                  borderTop: i === 0 ? undefined : '1px solid rgba(120,90,40,0.18)',
-                }}
+                style={{ borderTop: i === 0 ? undefined : '1px solid rgba(120,90,40,0.18)' }}
               >
                 <Group gap="sm" wrap="nowrap" align="flex-start">
                   <Box mt={3}>
-                    <IndicatorLamp color={lamp.color} lit={lamp.lit} size={13} label={op.status} />
+                    <IndicatorLamp color={lamp.color} lit={lamp.lit} size={12} label={op.status} />
                   </Box>
                   <Box style={{ flex: 1, minWidth: 0 }}>
                     <Group justify="space-between" wrap="nowrap" gap="xs">

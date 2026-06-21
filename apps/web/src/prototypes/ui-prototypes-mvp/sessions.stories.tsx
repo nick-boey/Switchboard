@@ -1,6 +1,6 @@
 import { Badge, Box, Button, Group, SimpleGrid, Stack, Text } from '@mantine/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { definePrototypeMeta } from '../define-prototype-meta';
 import {
   AppFrame,
@@ -8,22 +8,28 @@ import {
   EmbossedLabel,
   IndicatorLamp,
   OperationLedger,
+  PANEL_RADIUS,
   Panel,
+  Plug,
+  SectionTitle,
   Toast,
-  type LampColor,
+  type Corner,
   type Operation,
+  type PlugStatus,
 } from './kit';
 
 /**
  * Screen 3 of the MVP flow — list running sessions and launch `claude --remote-control`, then hand
- * off to the official Claude mobile app via a toast (confirms the `claude-session-launch` change;
- * plan Decision 7). Mobile-first with a desktop variant; renders empty / launching (ledger + lock)
- * / handoff (success toast) / error states. Static fake data only.
+ * off to the official Claude mobile app via a toast (confirms `claude-session-launch`; plan
+ * Decision 7). Flat language. Sessions are grouped by repo: one panel per session, stacked with NO
+ * gap inside a group, gaps only between repo groups. Mobile-first + desktop; renders empty /
+ * launching (ledger + lock) / handoff (toast) / error states. Static fake data only.
  */
 
 type SessionStatus = 'running' | 'idle' | 'exited';
 
 interface Session {
+  repo: string;
   branch: string;
   model: string;
   endpoint: string;
@@ -31,23 +37,41 @@ interface Session {
   started: string;
 }
 
-const LAMP: Record<SessionStatus, { color: LampColor; lit: boolean }> = {
-  running: { color: 'patina', lit: true },
-  idle: { color: 'brass', lit: true },
-  exited: { color: 'signal', lit: false },
+const PLUG_FOR: Record<SessionStatus, PlugStatus> = {
+  running: 'running',
+  idle: 'idle',
+  exited: 'off',
 };
 
-function SessionRow({ s, divider }: { s: Session; divider: boolean }) {
-  const lamp = LAMP[s.status];
+type Position = 'single' | 'first' | 'middle' | 'last';
+
+/** Corners that carry screws for a panel at this position in a stack — only the group's outer ones. */
+const CORNERS: Record<Position, Corner[]> = {
+  single: ['tl', 'tr', 'bl', 'br'],
+  first: ['tl', 'tr'],
+  middle: [],
+  last: ['bl', 'br'],
+};
+
+/** Radius + negative-margin overrides so stacked session panels collapse into one gapless group. */
+function stackStyle(position: Position): CSSProperties {
+  const top = position === 'first' || position === 'single';
+  const bottom = position === 'last' || position === 'single';
+  return {
+    marginTop: top ? 0 : -1,
+    borderTopLeftRadius: top ? PANEL_RADIUS : 0,
+    borderTopRightRadius: top ? PANEL_RADIUS : 0,
+    borderBottomLeftRadius: bottom ? PANEL_RADIUS : 0,
+    borderBottomRightRadius: bottom ? PANEL_RADIUS : 0,
+  };
+}
+
+function SessionPanel({ s, position }: { s: Session; position: Position }) {
   return (
-    <Box
-      py={10}
-      px={6}
-      style={{ borderTop: divider ? '1px solid rgba(120,90,40,0.18)' : undefined }}
-    >
-      <Group justify="space-between" wrap="nowrap" align="center" gap="sm">
-        <Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
-          <IndicatorLamp color={lamp.color} lit={lamp.lit} size={11} label={s.status} />
+    <Panel p="md" corners={CORNERS[position]} style={stackStyle(position)}>
+      <Group justify="space-between" align="center" wrap="nowrap">
+        <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Plug status={PLUG_FOR[s.status]} size={18} label={s.status} />
           <Text fz="sm" fw={700} ff="monospace" truncate>
             {s.branch}
           </Text>
@@ -56,12 +80,9 @@ function SessionRow({ s, divider }: { s: Session; divider: boolean }) {
           {s.model}
         </Badge>
       </Group>
-      <Text fz="xs" c="dimmed" ff="monospace" truncate mt={2}>
-        {s.endpoint}
-      </Text>
       <Group justify="space-between" align="center" wrap="nowrap" mt={6}>
-        <Text fz="xs" c="dimmed">
-          {s.status} · started {s.started}
+        <Text fz="xs" c="dimmed" ff="monospace" truncate>
+          {s.endpoint} · {s.started}
         </Text>
         <Group gap={6} wrap="nowrap" style={{ flex: 'none' }}>
           <Button size="xs" variant="default">
@@ -72,7 +93,29 @@ function SessionRow({ s, divider }: { s: Session; divider: boolean }) {
           </Button>
         </Group>
       </Group>
-    </Box>
+    </Panel>
+  );
+}
+
+/** A repo's sessions: a plain-text group header over a gapless stack of single-session panels. */
+function SessionGroup({ repo, sessions }: { repo: string; sessions: Session[] }) {
+  return (
+    <Stack gap={6}>
+      <SectionTitle>{repo}</SectionTitle>
+      <Box>
+        {sessions.map((s, i) => {
+          const position: Position =
+            sessions.length === 1
+              ? 'single'
+              : i === 0
+                ? 'first'
+                : i === sessions.length - 1
+                  ? 'last'
+                  : 'middle';
+          return <SessionPanel key={s.branch} s={s} position={position} />;
+        })}
+      </Box>
+    </Stack>
   );
 }
 
@@ -108,10 +151,24 @@ interface ScreenProps {
   desktop?: boolean;
 }
 
-const WORKTREE = 'feature/remote-control';
+const LAUNCH_TARGET = 'feature/remote-control';
+
+function groupByRepo(sessions: Session[]): { repo: string; sessions: Session[] }[] {
+  const order: string[] = [];
+  const map = new Map<string, Session[]>();
+  for (const s of sessions) {
+    if (!map.has(s.repo)) {
+      map.set(s.repo, []);
+      order.push(s.repo);
+    }
+    map.get(s.repo)!.push(s);
+  }
+  return order.map((repo) => ({ repo, sessions: map.get(repo)! }));
+}
 
 function Sessions({ sessions, ledger, locked = false, toast, desktop = false }: ScreenProps) {
   const running = sessions.filter((s) => s.status === 'running').length;
+  const groups = groupByRepo(sessions);
   const status = (
     <Group gap={8} wrap="nowrap">
       <IndicatorLamp color="patina" lit={running > 0} size={11} label="sessions" />
@@ -121,72 +178,44 @@ function Sessions({ sessions, ledger, locked = false, toast, desktop = false }: 
     </Group>
   );
 
-  const context = (
-    <Panel pressed p="xs">
-      <Group gap={8} wrap="nowrap">
-        <Text fz="xs" c="dimmed">
-          ‹ switchboard
-        </Text>
-        <Text fz="xs" c="dimmed">
-          /
-        </Text>
-        <Text fz="sm" fw={700} ff="monospace" truncate>
-          {WORKTREE}
-        </Text>
-      </Group>
-    </Panel>
-  );
-
-  const list = (
-    <Panel>
-      <Group justify="space-between" align="center">
-        <EmbossedLabel>Sessions</EmbossedLabel>
-        <Text fz="xs" c="dimmed">
-          {sessions.length} total
-        </Text>
-      </Group>
-      {sessions.length === 0 ? (
-        <Panel pressed mt="sm">
-          <Stack gap={4} align="center" py="lg">
-            <IndicatorLamp color="patina" size={16} label="no sessions" />
-            <Text fz="sm" fw={600}>
-              No sessions running
-            </Text>
-            <Text fz="xs" c="dimmed" ta="center" maw={260}>
-              Launch{' '}
-              <Text span ff="monospace">
-                claude --remote-control
-              </Text>{' '}
-              to start one, then drive it from the Claude mobile app.
-            </Text>
-          </Stack>
-        </Panel>
-      ) : (
-        <Panel pressed p="xs" mt="sm">
-          <Stack gap={0}>
-            {sessions.map((s, i) => (
-              <SessionRow key={s.branch} s={s} divider={i > 0} />
-            ))}
-          </Stack>
-        </Panel>
-      )}
-    </Panel>
-  );
+  const list =
+    sessions.length === 0 ? (
+      <Panel pressed>
+        <Stack gap={4} align="center" py="lg">
+          <Plug status="off" size={22} label="no sessions" />
+          <Text fz="sm" fw={600}>
+            No sessions running
+          </Text>
+          <Text fz="xs" c="dimmed" ta="center" maw={260}>
+            Launch{' '}
+            <Text span ff="monospace">
+              claude --remote-control
+            </Text>{' '}
+            to start one, then drive it from the Claude mobile app.
+          </Text>
+        </Stack>
+      </Panel>
+    ) : (
+      <Stack gap="lg">
+        {groups.map((g) => (
+          <SessionGroup key={g.repo} repo={g.repo} sessions={g.sessions} />
+        ))}
+      </Stack>
+    );
 
   return (
     <AppFrame status={status} toast={toast}>
       <Stack gap="md">
-        {context}
         {ledger && <OperationLedger ops={ledger} locked={locked} />}
         {desktop ? (
           <SimpleGrid cols={2} spacing="md">
-            {list}
-            <LaunchPanel branch={WORKTREE} locked={locked} />
+            <Box>{list}</Box>
+            <LaunchPanel branch={LAUNCH_TARGET} locked={locked} />
           </SimpleGrid>
         ) : (
           <>
             {list}
-            <LaunchPanel branch={WORKTREE} locked={locked} />
+            <LaunchPanel branch={LAUNCH_TARGET} locked={locked} />
           </>
         )}
       </Stack>
@@ -194,19 +223,29 @@ function Sessions({ sessions, ledger, locked = false, toast, desktop = false }: 
   );
 }
 
-const LIVE: Session = {
+const SB_LIVE: Session = {
+  repo: 'switchboard',
   branch: 'feature/remote-control',
   model: 'opus 4.8',
   endpoint: 'remote-control · ready',
   status: 'running',
-  started: '2m ago',
+  started: 'started 2m ago',
 };
-const IDLE: Session = {
+const SB_IDLE: Session = {
+  repo: 'switchboard',
   branch: 'fix/clone-retry',
   model: 'sonnet 4.6',
   endpoint: 'remote-control · idle',
   status: 'idle',
-  started: '1h ago',
+  started: 'started 1h ago',
+};
+const WF_LIVE: Session = {
+  repo: 'widget-factory',
+  branch: 'main',
+  model: 'opus 4.8',
+  endpoint: 'remote-control · ready',
+  status: 'running',
+  started: 'started 12m ago',
 };
 
 const meta = {
@@ -267,12 +306,12 @@ export const MobileLaunching: Story = {
   ),
 };
 
-/** Handoff — the session is live and the toast tells the operator to open the Claude mobile app. */
+/** Handoff — sessions grouped by repo; the new one is live and the toast points to the mobile app. */
 export const MobileHandoff: Story = {
   render: () => (
     <Frame width={PHONE}>
       <Sessions
-        sessions={[LIVE]}
+        sessions={[SB_LIVE, SB_IDLE, WF_LIVE]}
         toast={
           <Toast tone="patina" title="Session live on feature/remote-control">
             Open the Claude app on your phone to drive the conversation.
@@ -288,7 +327,7 @@ export const MobileError: Story = {
   render: () => (
     <Frame width={PHONE}>
       <Sessions
-        sessions={[IDLE]}
+        sessions={[SB_IDLE]}
         ledger={[
           {
             id: 'op-launch',
@@ -302,12 +341,12 @@ export const MobileError: Story = {
   ),
 };
 
-/** Desktop variant — sessions list and launch panel side by side, with the handoff toast. */
+/** Desktop variant — grouped sessions and the launch panel side by side, with the handoff toast. */
 export const Desktop: Story = {
   render: () => (
     <Frame width={DESKTOP}>
       <Sessions
-        sessions={[LIVE, IDLE]}
+        sessions={[SB_LIVE, SB_IDLE, WF_LIVE]}
         desktop
         toast={
           <Toast tone="patina" title="Session live on feature/remote-control">

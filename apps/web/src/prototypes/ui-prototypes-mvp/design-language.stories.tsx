@@ -2,17 +2,24 @@ import { Box, Button, Group, SimpleGrid, Stack, Text, Title, useMantineTheme } f
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ReactNode } from 'react';
 import { EmbossedPanel } from '../../components/EmbossedPanel';
-import { JackButton } from '../../components/JackButton';
 import type { SwitchboardTokens } from '../../theme/theme';
 import { definePrototypeMeta } from '../define-prototype-meta';
-import { DeviceFrame, EmbossedLabel, IndicatorLamp, Panel } from './kit';
+import {
+  DeviceFrame,
+  EmbossedLabel,
+  IndicatorLamp,
+  Panel,
+  Plug,
+  SectionTitle,
+  type PlugStatus,
+} from './kit';
 
 /**
- * The design-language gallery for `ui-prototypes-mvp` — the living definition of the '50s retro
- * switchboard visual treatment (plan Decision 1). It renders the token palette, the embossed
- * surfaces, the geometric type ramp, and the controls/indicator vocabulary the three flow screens
- * are built from. Sketched here so the "how far to push the metaphor" question is answered against
- * something rendered, not imagined.
+ * The design-language gallery for `ui-prototypes-mvp` — the living definition of the visual
+ * treatment (plan Decision 1). This is the FLAT, abstract take: same '50s switchboard influences
+ * (palette, plug + screw + nameplate motifs, geometric type) but rendered with flat surfaces and
+ * light outlines instead of heavy emboss. Sketched here so the look is judged against something
+ * rendered, not imagined.
  */
 
 function GalleryShell({ children }: { children: ReactNode }) {
@@ -28,7 +35,7 @@ function GalleryShell({ children }: { children: ReactNode }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Stack gap="sm">
-      <EmbossedLabel>{title}</EmbossedLabel>
+      <SectionTitle>{title}</SectionTitle>
       {children}
     </Stack>
   );
@@ -90,52 +97,48 @@ export const Surfaces: Story = {
         </Title>
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
           <Panel>
-            <EmbossedLabel>Raised panel</EmbossedLabel>
+            <EmbossedLabel>Raised card</EmbossedLabel>
             <Text mt="sm" fz="sm">
-              The dominant building block — bakelite ground with the emboss shadow stack. Every
-              screen region is a panel.
+              The building block: a slightly rounded flat surface, a 1px outline, and four corner
+              screws. Inset titles live only inside cards like this.
             </Text>
           </Panel>
           <Panel pressed>
-            <EmbossedLabel>Pressed / inset</EmbossedLabel>
+            <Text fw={700} fz="sm">
+              Pressed well
+            </Text>
             <Text mt="sm" fz="sm">
-              Recessed wells hold inputs, lists, and read-outs — the seated, machined feel.
+              A subtly recessed container for lists and read-outs. No screws, no inset title — plain
+              text differentiates it.
             </Text>
           </Panel>
         </SimpleGrid>
         <Panel>
-          <EmbossedLabel>Nested wells</EmbossedLabel>
+          <EmbossedLabel>Nested well</EmbossedLabel>
           <Panel pressed mt="sm">
             <Text fz="sm" ff="monospace">
-              A pressed well inside a raised panel — the canonical list / log container.
+              A pressed well inside a raised card — the canonical list / log container.
             </Text>
           </Panel>
         </Panel>
 
-        <EmbossedLabel>
-          Dark finish · proposed vs. current primitive (toggle dark to compare)
-        </EmbossedLabel>
+        <SectionTitle>Flat (this change) vs. emboss (prior pass)</SectionTitle>
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
           <Panel>
             <Text fw={700} fz="sm" mb={4}>
-              Panel (proposed)
+              Flat Panel (this change)
             </Text>
             <Text fz="sm">
-              Adapts: cream in light, charcoal in dark. The dark finish the gate chose — promote
-              into{' '}
-              <Text span ff="monospace">
-                EmbossedPanel
-              </Text>{' '}
-              + theme tokens.
+              Outline + corner screws, no shadow. Adapts: cream in light, charcoal in dark.
             </Text>
           </Panel>
           <EmbossedPanel>
             <Text fw={700} fz="sm" mb={4}>
-              EmbossedPanel (current)
+              EmbossedPanel (prior / current primitive)
             </Text>
             <Text fz="sm">
-              Today's production primitive — forced cream in every scheme. Identical in light; stays
-              cream in dark.
+              The heavy-emboss skeuomorphic surface from the first pass — kept here only for
+              comparison.
             </Text>
           </EmbossedPanel>
         </SimpleGrid>
@@ -183,6 +186,14 @@ export const Typography: Story = {
   },
 };
 
+const PLUGS: { status: PlugStatus; label: string }[] = [
+  { status: 'running', label: 'running' },
+  { status: 'working', label: 'working' },
+  { status: 'error', label: 'fault' },
+  { status: 'idle', label: 'idle' },
+  { status: 'off', label: 'off' },
+];
+
 export const Controls: Story = {
   render: () => (
     <GalleryShell>
@@ -191,25 +202,27 @@ export const Controls: Story = {
       </Title>
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
         <Panel>
-          <EmbossedLabel>Jacks</EmbossedLabel>
+          <EmbossedLabel>Plugs</EmbossedLabel>
+          <Text fz="xs" c="dimmed" mt={6}>
+            Thin outer ring, thick inner disc coloured by status.
+          </Text>
           <Group mt="md" gap="lg">
-            <Stack align="center" gap={6}>
-              <JackButton label="Idle line" />
-              <Text fz="xs" c="dimmed">
-                idle
-              </Text>
-            </Stack>
-            <Stack align="center" gap={6}>
-              <JackButton label="Patched line" active />
-              <Text fz="xs" c="dimmed">
-                patched
-              </Text>
-            </Stack>
+            {PLUGS.map((p) => (
+              <Stack key={p.label} align="center" gap={6}>
+                <Plug status={p.status} size={28} label={p.label} />
+                <Text fz="xs" c="dimmed">
+                  {p.label}
+                </Text>
+              </Stack>
+            ))}
           </Group>
         </Panel>
 
         <Panel>
-          <EmbossedLabel>Indicator lamps</EmbossedLabel>
+          <EmbossedLabel>Status dots</EmbossedLabel>
+          <Text fz="xs" c="dimmed" mt={6}>
+            The lightweight inline marker for list rows.
+          </Text>
           <Stack mt="md" gap="xs">
             <Group gap="sm">
               <IndicatorLamp color="patina" lit label="connected" />
