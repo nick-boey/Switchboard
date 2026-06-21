@@ -15,8 +15,10 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/dist-types/**',
-      // Prototype quarantine (design Decision 7).
-      'apps/web/src/prototypes/**',
+      // Prototype quarantine (design Decision 7), narrowed to per-change sketch folders so
+      // shared prototype-harness modules at the `src/prototypes/` root and their co-located
+      // tests ARE collected, while sketch folders stay quarantined. Mirrors apps/web/vitest.config.ts.
+      'apps/web/src/prototypes/*/**',
       // Storybook stories are not unit tests.
       '**/*.stories.*',
       // Playwright owns the e2e directory.

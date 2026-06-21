@@ -17,9 +17,12 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: [
       '**/node_modules/**',
-      // Prototype quarantine (design Decision 7).
-      'src/prototypes/**',
-      // Storybook stories are not unit tests.
+      // Prototype quarantine (design Decision 7), narrowed to per-change sketch folders
+      // (`src/prototypes/<change>/**`) so shared prototype-harness modules at the
+      // `src/prototypes/` root (e.g. `define-prototype-meta.ts`) and their co-located tests
+      // ARE collected, while sketch folders stay quarantined.
+      'src/prototypes/*/**',
+      // Storybook stories are not unit tests (keeps every `*.stories.*` out regardless).
       '**/*.stories.*',
     ],
   },

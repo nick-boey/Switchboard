@@ -16,7 +16,9 @@
     "vite.config.ts",
     "vitest.config.ts",
     ".storybook/**/*.ts",
-    ".storybook/**/*.tsx"
+    ".storybook/**/*.tsx",
+    ".storybook-prototypes/**/*.ts",
+    ".storybook-prototypes/**/*.tsx"
   ],
   "exclude": ["dist", "dist-types", "storybook-static", "node_modules"],
   "references": [{ "path": "../../packages/shared" }, { "path": "../server" }]
