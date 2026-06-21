@@ -6,11 +6,11 @@ every Plans page linked in plan.md MUST have a row.
 
 | Source | Destination | Action | Status |
 | --- | --- | --- | --- |
-| plan.md (Architecture summary) + the LikeC4 base model | `docs/dev/Architecture/` (`*.c4`) | author → `docs/dev/Architecture/` | open |
-| — | `README.md` | author → `README.md` | open |
-| — | `docs/dev/Contributing/development-workflow.md` | author → `docs/dev/Contributing/development-workflow.md` | open |
-| — | `docs/dev/Contributing/testing.md` | author → `docs/dev/Contributing/testing.md` | open |
-| `docs/plans/switchboard/mvp.md` | — | retire — trim foundations' content at archive (other changes still list it) | open |
+| plan.md (Architecture summary) + the LikeC4 base model | `docs/dev/Architecture/` (`*.c4`) | author → `docs/dev/Architecture/` | resolved |
+| — | `README.md` | author → `README.md` | resolved |
+| — | `docs/dev/Contributing/development-workflow.md` | author → `docs/dev/Contributing/development-workflow.md` | resolved |
+| — | `docs/dev/Contributing/testing.md` | author → `docs/dev/Contributing/testing.md` | resolved |
+| `docs/plans/switchboard/mvp.md` | — | retire — trim foundations' content at archive (other changes still list it) | resolved |
 
 Notes:
 

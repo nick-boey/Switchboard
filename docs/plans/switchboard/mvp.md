@@ -1,7 +1,6 @@
 ---
 title: "Plan: Switchboard MVP"
-openspec-changes:
-  - foundations
+openspec-changes: []
 ---
 
 # Plan: Switchboard MVP
@@ -10,8 +9,9 @@ openspec-changes:
 > consistency** across the changes below: any decision that affects more than one
 > change is recorded here, not in a single change's artifacts.
 >
-> `openspec-changes` (frontmatter) lists changes **as they are created**. Only
-> `foundations` exists today; the remaining changes are roadmapped in
+> `openspec-changes` (frontmatter) lists changes **as they are created** and drops them
+> **once archived**. `foundations` is now **implemented and archived** (its specs are
+> merged into `openspec/specs/`); the remaining changes are roadmapped in
 > [Change roadmap](#change-roadmap) and added to the frontmatter as each is created,
 > keeping the bidirectional plan-page ↔ `plan.md` link honest. (The runtime spike is a
 > throwaway investigation, not an OpenSpec change — see the roadmap.)
@@ -124,7 +124,7 @@ prose in `tasks.md`).
 | # | Change | Schema | Purpose |
 |---|--------|--------|---------|
 | **0** | **runtime spike** *(throwaway investigation — not an OpenSpec change)* | — | Prove the riskiest runtime assumptions **before** `foundations` bakes them in: Tailscale-in-Docker (`serve`, bind), the **Tailscale-identity-header auth path** behind `serve`, config-volume persistence, **Claude credential persistence** in a container, and process/tmux supervision. Output: a findings note under `docs/dev/spikes/`; throwaway code lives outside the monorepo. Go/no-go on the assumptions feeds `foundations` design. |
-| 1 | `foundations` | switch-feature | Monorepo, TS, web shell + Mantine + retro design tokens, Storybook, Hono skeleton + RPC wiring, **auth gate + loopback bind + CORS + bind-address tests**, **RuntimeContext** abstraction, Vitest, Playwright E2E harness (temp-git fixture), Just, OTel instrumentation + redaction policy, `site/` + LikeC4, `shared` package. **Builds the test harness everything else needs.** |
+| 1 | `foundations` ✅ *archived* | switch-feature | Monorepo, TS, web shell + Mantine + retro design tokens, Storybook, Hono skeleton + RPC wiring, **auth gate + loopback bind + CORS + bind-address tests**, **RuntimeContext** abstraction, Vitest, Playwright E2E harness (temp-git fixture), Just, OTel instrumentation + redaction policy, `site/` + LikeC4, `shared` package. **Builds the test harness everything else needs.** |
 | 2 | `ui-prototypes-mvp` | switch-feature-ui | Lightweight **upfront** prototypes (hybrid strategy): the design language + core screens (repo browser/clone, worktree list/create, session list/launch), desktop + mobile. **Confirmation gate** for user stories before backend work. |
 | 3 | `repo-clone-browse` | switch-feature | List GitHub repos/orgs (PAT) + bare clone → `repos/<repo-id>/.bare` + list cloned repos. |
 | 4 | `worktree-management` | switch-feature | Create worktree + branch → `repos/<repo-id>/worktrees/<wt-id>`; canonical ID scheme; "branch exists on remote" vs "new branch". |
