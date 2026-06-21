@@ -1,0 +1,92 @@
+---
+// Switchboard documentation shell (foundations).
+//
+// Minimal landing page that surfaces the permanent LikeC4 architecture model
+// (../docs/dev/Architecture/*.c4) and the two base views. The interactive
+// diagrams are served by the pinned `likec4` CLI (`pnpm --dir site run arch`).
+
+const views = [
+  {
+    id: 'foundations-context',
+    title: 'System Context',
+    blurb: 'Switchboard and the external systems it talks to (GitHub, the tmux host, the Claude backplane, Tailscale, the Claude mobile app).',
+  },
+  {
+    id: 'foundations-containers',
+    title: 'Containers',
+    blurb: 'The containers inside Switchboard — Web SPA, API Server, CLI — and their immediate neighbours.',
+  },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Switchboard — Architecture</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        line-height: 1.5;
+      }
+      body {
+        margin: 0;
+        padding: 2rem 1.25rem 4rem;
+        max-width: 52rem;
+        margin-inline: auto;
+      }
+      h1 {
+        margin: 0 0 0.25rem;
+      }
+      .lede {
+        opacity: 0.75;
+        margin-top: 0;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        display: grid;
+        gap: 1rem;
+      }
+      li {
+        border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+        border-radius: 0.5rem;
+        padding: 1rem 1.25rem;
+      }
+      code {
+        background: color-mix(in srgb, currentColor 12%, transparent);
+        padding: 0.1rem 0.35rem;
+        border-radius: 0.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Switchboard</h1>
+    <p class="lede">
+      Mobile-first remote control for Claude Code sessions, reachable only over
+      Tailscale.
+    </p>
+
+    <h2>Architecture model</h2>
+    <p>
+      The permanent base model lives in
+      <code>docs/dev/Architecture/*.c4</code> (LikeC4). Validate it with
+      <code>pnpm --dir site exec likec4 validate --no-layout ../docs/dev/Architecture</code>
+      and open the interactive viewer with <code>pnpm --dir site run arch</code>.
+    </p>
+
+    <h2>Base views</h2>
+    <ul>
+      {
+        views.map((view) => (
+          <li>
+            <strong>{view.title}</strong> &mdash; <code>{view.id}</code>
+            <p>{view.blurb}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </body>
+</html>

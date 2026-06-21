@@ -1,0 +1,19 @@
+// Switchboard architecture — base views (foundations).
+//
+// `foundations-context`    — system context (Switchboard + the external systems).
+// `foundations-containers` — the containers inside Switchboard and their neighbours.
+
+views {
+
+  view foundations-context {
+    title 'Foundations — System Context'
+
+    include *
+  }
+
+  view foundations-containers of Switchboard {
+    title 'Foundations — Containers'
+
+    include *
+  }
+}

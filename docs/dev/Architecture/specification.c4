@@ -1,0 +1,36 @@
+// Switchboard architecture — element & relationship vocabulary.
+//
+// This is the PERMANENT base specification (foundations, Decision 9 / plan.md
+// "Planned architecture"). Element ids defined in `model.c4` are fixed here so later
+// changes can `extend` them and graft `Planned/<change>.c4` `#todo` overlays.
+
+specification {
+
+  // --- Element kinds -------------------------------------------------------
+
+  element system {
+    style {
+      shape rectangle
+    }
+  }
+
+  element container {
+    style {
+      shape rectangle
+      opacity 25%
+    }
+  }
+
+  element external {
+    style {
+      shape rectangle
+      color gray
+    }
+  }
+
+  // --- Tags ----------------------------------------------------------------
+
+  // `planned` marks parts of the skeleton that are scaffolded but whose behaviour
+  // arrives in later changes (git/github/tmux services, changes 3–6).
+  tag planned
+}

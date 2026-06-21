@@ -1,0 +1,36 @@
+{
+  "name": "@switchboard/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "switchboard-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.0.5",
+    "@hono/zod-validator": "0.8.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.219.0",
+    "@opentelemetry/resources": "2.8.0",
+    "@opentelemetry/sdk-node": "0.219.0",
+    "@opentelemetry/sdk-trace-node": "2.8.0",
+    "@opentelemetry/semantic-conventions": "1.41.1",
+    "@switchboard/shared": "workspace:*",
+    "hono": "4.12.26",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.0"
+  }
+}

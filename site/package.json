@@ -1,0 +1,21 @@
+{
+  "name": "@switchboard/site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "//": "`site/` is intentionally a no-op in the root `pnpm -r build` gate (Phase 0); the real Astro build is `build:site` and the LikeC4 model build is `arch:build`. The architecture model lives in ../docs/dev/Architecture/*.c4.",
+  "scripts": {
+    "build": "echo \"[site] no-op in the root build; run \\`pnpm --dir site run build:site\\` (Astro) or \\`arch:build\\` (LikeC4)\"",
+    "dev": "astro dev",
+    "build:site": "astro build",
+    "preview": "astro preview",
+    "arch": "likec4 start ../docs/dev/Architecture",
+    "arch:validate": "likec4 validate --no-layout ../docs/dev/Architecture",
+    "arch:build": "likec4 build --output likec4-build ../docs/dev/Architecture",
+    "clean": "rm -rf dist .astro likec4-build"
+  },
+  "dependencies": {
+    "astro": "6.4.8",
+    "likec4": "1.58.0"
+  }
+}
