@@ -8,10 +8,10 @@
 
 ## 2. app-runtime — config & lifecycle
 
-- [ ] 2.1 Write failing tests: config schema (valid / invalid / first-run defaults at mode `600`); `start(ctx)` boots on `127.0.0.1`; `GET /health` → 200; loopback-only bind; invalid config refuses to start with a field-named error; `close()` shuts down gracefully
-- [ ] 2.2 Implement the `~/.switchboard` config Zod schema + `RuntimeContext` type in `packages/shared`
-- [ ] 2.3 Implement the config loader (create secure defaults, generate bearer token, validate, clear errors) to green
-- [ ] 2.4 Implement the Hono app + `start(ctx)` / `ServerHandle` (loopback bind, `/health`, graceful `close()`) to green
+- [ ] 2.1 Write failing tests: config schema (valid / invalid / first-run defaults at mode `600`, `trustServeIdentity` off by default); `loadConfig()` reads+validates and throws a field-named error on invalid config; `start(ctx)` boots on `127.0.0.1` from the parsed config; `GET /health` → 200 unauthenticated; loopback-only bind; `close()` shuts down gracefully
+- [ ] 2.2 Implement the `~/.switchboard` config Zod schema (bearer token, `trustServeIdentity` default `false`, identity allowlist, telemetry exporter, reserved `github` slot) + `RuntimeContext` type in `packages/shared`
+- [ ] 2.3 Implement standalone `loadConfig()` (create secure `600` defaults, generate bearer token, validate, clear errors) to green
+- [ ] 2.4 Implement the Hono app + `start(ctx)` / `ServerHandle` taking the parsed config (loopback bind, `/health`, graceful `close()`, no file I/O in `start`) to green
 
 ## 3. app-runtime — typed API contract
 
@@ -20,19 +20,19 @@
 
 ## 4. api-auth-gate
 
-- [ ] 4.1 Write failing tests: no creds → 401; valid bearer → allow; invalid bearer → 401; allowlisted serve identity → allow without bearer; non-allowlisted serve identity → 403; `tailscale-user-*` without serve markers stripped/ignored; strict CORS denies a disallowed origin
-- [ ] 4.2 Implement the auth middleware (serve-marker detection, identity allowlist, bearer fallback, spoof-header stripping) + the CORS policy to green
+- [ ] 4.1 Write failing tests: `/health` reachable unauthenticated; no creds on a protected route → 401; valid bearer → allow; invalid bearer → 401; with `trustServeIdentity` on — allowlisted serve identity → allow without bearer, non-allowlisted → 403; with trust off (default) — full serve markers + allowlisted identity → rejected (spoof-safe negative test); CORS denies a disallowed origin, allows the app origin, and passes no-`Origin` requests
+- [ ] 4.2 Implement the auth middleware (`/health` exemption, `trustServeIdentity`-gated identity trust, serve-marker detection, identity allowlist, bearer fallback, ignore identity headers when trust is off) + the CORS policy to green
 
 ## 5. observability
 
-- [ ] 5.1 Write failing tests: a semconv span is recorded per request; the redaction blocklist scrubs secrets/paths/args/clone-URLs/GitHub-error-bodies; exporter selection (default `none` emits nothing; `otlp` exports)
+- [ ] 5.1 Write failing tests: a semconv span is recorded per request; the redaction blocklist scrubs secrets/paths/args/clone-URLs/branch-names/GitHub-error-bodies; exporter selection (default `none` emits nothing; `console` writes to console; `otlp` exports)
 - [ ] 5.2 Implement OTel instrumentation + the redacting span processor + config-driven exporter selection to green
 
 ## 6. Web shell, theme & client
 
-- [ ] 6.1 Implement the Mantine provider + the '50s retro switchboard **theme tokens** and a couple of primitives, with Storybook stories
-- [ ] 6.2 Implement the mobile-first app shell, TanStack Query wiring, and the typed `hc` client; a placeholder route only
-- [ ] 6.3 Write a Playwright E2E (initially failing) that loads the shell through the bearer path against a real `start(ctx)` server, then wire it to green
+- [ ] 6.1 Write a failing Playwright E2E (plus a shell smoke-story assertion) that loads the app shell through the bearer path against a real `start(ctx)` server
+- [ ] 6.2 Implement the Mantine provider + the '50s retro switchboard **theme tokens** and a couple of primitives, with Storybook stories
+- [ ] 6.3 Implement the mobile-first app shell, TanStack Query wiring, and the typed `hc` client (placeholder route only) to green
 
 ## 7. CLI thin shell
 

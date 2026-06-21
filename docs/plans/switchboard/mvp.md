@@ -161,7 +161,7 @@ here.
 | API layer | **Hono RPC + Zod**; runtime validation on all mutation inputs; **API contract tests** to catch web↔server schema drift | End-to-end types with minimal boilerplate; Zod is the single schema source; contract tests stop the workspace boundary from silently coupling/drifting. |
 | Client server-state | **TanStack Query** | Standard for a client–server SPA; pairs cleanly with Mantine. |
 | UI | **Mantine** + '50s retro switchboard theme | Per brief; theme tokens established in `foundations`. |
-| Auth | **Tailscale identity header (`Tailscale-User-Login`, allowlist) behind `tailscale serve`, with a bearer-token fallback** for direct/local access; loopback bind; strict CORS; identity headers trusted only via `serve` | Closes the zero-auth hole cheaply, passwordless on mobile, and the identity is exactly what container-per-user multi-user keys off. **Validated in spike 0.** |
+| Auth | **Tailscale identity (`Tailscale-User-Login`, allowlist) behind `tailscale serve` + bearer-token fallback**; loopback bind; `/health` exempt; strict CORS. Identity trust is config-gated (`trustServeIdentity`, default **off**) — the real boundary is **serve-exclusive ingress (network isolation)**, not the headers (markers select a path, they don't prove identity). A Unix-domain-socket serve ingress is the deferred hardening (`runtime-cli-docker`). | Closes the zero-auth hole cheaply, passwordless on mobile, and the identity is exactly what container-per-user multi-user keys off. **Validated in spike 0.** |
 | Persistence | **Filesystem + tmux as source of truth + `~/.switchboard` JSON config**, plus a **filesystem-backed operation ledger + lock** for long-running ops (clone/worktree/launch): idempotency, serialization, cancellation, stale-lock recovery after restart | Repos/worktrees *are* the disk; sessions *are* tmux. No DB to drift — but raw disk/tmux truth is insufficient for in-flight operations, so the ledger/lock fills that gap. |
 | Runtime context | Services take a **`RuntimeContext`** (workspace root, config, logger, telemetry, identity); no host-global paths hardcoded into service APIs | Preserves a clean container-per-user multi-user path even though MVP is single-user. |
 | GitHub auth | **PAT** (fine-grained) behind an OAuth-ready provider interface | Simplest for a single trusted user; OAuth/keychain slots in later. |
@@ -177,9 +177,10 @@ here.
 TDD is mandatory across the programme.
 
 - **Vitest** — unit/service tests (git/github/tmux services with fakes); **API contract
-  tests**; **auth/bind-address tests** (loopback-only, identity-header trust only via
-  `serve`, bearer fallback); **token-redaction + subprocess tests** (no PAT in args /
-  remotes / logs / telemetry).
+  tests**; **auth/bind-address tests** (loopback-only, `trustServeIdentity`-gated identity
+  trust, bearer fallback, `/health` exempt); **telemetry-redaction tests** (in
+  `foundations`). Subprocess/PAT-redaction tests (no PAT in args / remotes / logs) live in
+  **`repo-clone-browse`**, where subprocesses and the PAT exist.
 - **Playwright** — E2E driving the real web UI against a running server, using **git in
   a temporary folder** (per brief), a faked/recorded GitHub, and a stub for the
   tmux/claude launch. Covers the **operation ledger/lock** behaviour (concurrent
@@ -194,11 +195,14 @@ TDD is mandatory across the programme.
 ## Security posture & accepted risks (MVP)
 
 - **Two boundaries, not one.** Network: a private Tailscale tailnet (no Funnel, server
-  bound to **loopback** behind `tailscale serve`). Application: the **auth gate** above
-  (Tailscale identity allowlist + bearer fallback) on every endpoint, since the API is
+  bound to **loopback** behind `tailscale serve`). Application: the **auth gate** (bearer
+  always; Tailscale identity when `trustServeIdentity` is enabled under a serve-exclusive
+  deployment) on every endpoint **except the `/health` liveness probe**, since the API is
   effectively a remote-code-execution surface (it launches processes, clones repos, runs
   git). The earlier "Tailscale is the only boundary" stance was tightened after review —
-  we do **not** ship zero app auth.
+  we do **not** ship zero app auth. The identity boundary is network isolation
+  (serve-exclusive ingress); a Unix-domain-socket serve ingress is the deferred hardening
+  in `runtime-cli-docker`.
 - Multi-user authorization (per-user repo isolation) is deferred to the future
   container-per-user change; the `RuntimeContext` abstraction keeps that path open.
 

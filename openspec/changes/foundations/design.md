@@ -25,7 +25,9 @@ mandatory, mobile-first web, server reachable only via Tailscale.
 **Non-Goals:**
 - No git / GitHub / tmux services (changes 3–5) and no real feature screens (change 2+).
 - No GitHub PAT / git credential helper yet — `foundations` only reserves the config slot;
-  the helper is `repo-clone-browse`.
+  the helper is `repo-clone-browse`. The **subprocess/PAT-redaction tests** (no token in
+  process args / remotes / logs) belong there too, where subprocesses and the PAT exist;
+  `foundations` covers **telemetry-span** redaction only.
 - No multi-user authorization (future), no Seq instance (deferred), no Docker/Tailscale
   orchestration in the CLI (that is `runtime-cli-docker`).
 
@@ -44,18 +46,28 @@ entrypoint is `start(ctx: RuntimeContext): Promise<ServerHandle>` where `ServerH
 `{ url, close() }` for graceful shutdown. The CLI and Playwright both construct a
 `RuntimeContext` and call `start` — the same shipped path, not a dev-only shim.
 
-**3. Auth gate (informed by the spike).** A Hono middleware applied to all routes,
-reject-by-default:
-- **Loopback bind only** (`127.0.0.1`); `tailscale serve` is the sole network ingress.
-- **Identity path:** when the request carries `serve` markers (the spike confirmed
-  `tailscale-user-login`, `tailscale-headers-info`, and a CGNAT `x-forwarded-for`), trust
-  `tailscale-user-login` against the configured allowlist (seed: `nick-boey@github`).
-- **Bearer path:** otherwise require `Authorization: Bearer <token>` matching the token in
-  `~/.switchboard` (covers local/dev and any direct-to-loopback request).
-- The middleware **strips inbound `tailscale-user-*` headers** that arrive *without* the
-  serve markers, so a loopback client cannot self-assert an identity.
-- Strict CORS (same-origin; no wildcard). *Alternative:* trust headers unconditionally —
-  rejected (spoofable on loopback).
+**3. Auth gate (informed by the spike).** A Hono middleware on all routes **except the
+unauthenticated `/health` liveness endpoint**, reject-by-default:
+- **Loopback bind only** (`127.0.0.1`); in the container deployment `tailscale serve` is
+  the *exclusive* ingress.
+- **The security boundary is network isolation, not the headers.** Serve injects
+  `tailscale-user-login` (+ `tailscale-headers-info`, CGNAT `x-forwarded-for`), but any
+  client that can reach the loopback ingress could set those headers too — so the markers
+  *select a path*, they do not *prove* identity. Identity is therefore trusted only when
+  config `trustServeIdentity` is enabled, which is set **only** in a deployment guaranteeing
+  serve-exclusive ingress, and defaults **off**.
+- **Identity path** (`trustServeIdentity` on): trust `tailscale-user-login` against the
+  allowlist (seed `nick-boey@github`); admit without a bearer token.
+- **Bearer path** (always available; the only path when trust is off): require
+  `Authorization: Bearer <token>` matching `~/.switchboard`.
+- When trust is **off**, `tailscale-user-*` headers are ignored regardless of markers (the
+  spoof-safe default — covered by a negative test).
+- **Residual risk:** with trust on, a process that bypasses serve to reach the loopback
+  ingress could spoof an identity. Accepted for the single-tenant MVP (mitigated by network
+  isolation); the deferred hardening is a **Unix-domain-socket serve ingress** (only serve
+  can write it) — a `runtime-cli-docker` concern.
+- Strict CORS (same-origin/configured; no wildcard; non-browser no-`Origin` requests pass
+  to the auth rules). *Alternative:* trust headers unconditionally — rejected (spoofable).
 
 **4. API contract (Hono RPC + Zod).** Routes are defined with Zod validators; the server
 exports its `AppType` and `packages/shared` re-exports the typed `hc` client factory. Every
@@ -64,14 +76,18 @@ server type and fails on drift. *Alternative:* tRPC — rejected (redundant over
 
 **5. Observability + redaction.** OTel SDK (semconv) instruments the Hono server. A span
 processor scrubs attributes against a **blocklist** (auth headers, bearer/PAT, clone URLs,
-absolute paths, command args, GitHub error bodies) before export. Exporter is selected by
-config: `none` (default) / `console` (dev) / `otlp` (Seq later). Redaction tests run
-before any exporter is enabled.
+branch names, absolute paths, command args, GitHub error bodies) before export. Exporter is
+selected by config: `none` (default) / `console` (dev) / `otlp` (Seq later). Redaction
+tests run before any exporter is enabled. (This is *telemetry-span* redaction; the
+subprocess/PAT redaction tests belong to `repo-clone-browse` — see Non-Goals.)
 
 **6. Config (`~/.switchboard`).** `packages/shared` owns the Zod schema for
-`~/.switchboard/config.json` (bearer token — generated on first run, identity allowlist,
-telemetry toggle, and a reserved `github` slot). The file is created `600`; the loader
-validates with Zod and surfaces clear errors. `RuntimeContext.config` is the parsed result.
+`~/.switchboard/config.json`: bearer token (generated on first run), `trustServeIdentity`
+(default `false`), identity allowlist, telemetry exporter (`none`/`console`/`otlp`), and a
+reserved `github` slot. A standalone **`loadConfig()`** reads + validates the file (creating
+secure `600` defaults on first run) and runs **before** `start(ctx)`; `start(ctx)` receives
+the parsed config on the `RuntimeContext` and performs no file I/O. The CLI and Playwright
+both call `loadConfig()` then `start(ctx)`.
 
 **7. Web shell + theme + Storybook.** React + Vite + Mantine, with TanStack Query for
 server state. The '50s retro switchboard look is a Mantine theme (tokens: embossed
@@ -111,15 +127,20 @@ What it must stand up:
 - Test doubles seam: services take `RuntimeContext`, so fakes inject via `ctx`.
 
 Per-capability tests:
-- **`app-runtime`:** unit — `start(ctx)` boots on loopback, `/health` responds, `close()`
-  shuts down cleanly, bad config rejected. Contract — client↔server type/Zod drift fails.
-- **`api-auth-gate`:** unit — no creds → 401; valid bearer → 200; **simulated serve
-  headers** (`tailscale-user-login` + markers) for an allowlisted user → 200, non-allowlist
-  → 403; `tailscale-user-*` **without** markers is stripped/ignored; bind-address test
-  asserts loopback-only. (Real `serve` is covered by the spike + `runtime-cli-docker`;
-  unit/E2E simulate the proxy by injecting/withholding the marker headers.)
-- **`observability`:** unit — redaction blocklist scrubs secrets/paths/args from spans;
-  exporter selection honors config; default `none` emits nothing.
+- **`app-runtime`:** unit — `loadConfig()` creates secure `600` defaults / validates /
+  rejects bad config with a field-named error; `start(ctx)` boots on loopback; `/health`
+  responds; `close()` shuts down cleanly. Contract — client↔server type/Zod drift fails.
+- **`api-auth-gate`:** unit — `/health` reachable unauthenticated; no creds on a protected
+  route → 401; valid/invalid bearer; with `trustServeIdentity` **on**, simulated serve
+  headers for an allowlisted user → admitted, non-allowlisted → 403; with trust **off**
+  (default), full markers + allowlisted identity → rejected (the spoof-safe negative test);
+  CORS denies a disallowed origin, allows the app origin, and passes no-`Origin` requests;
+  bind-address test asserts loopback-only. (Real `serve` is covered by the spike +
+  `runtime-cli-docker`; unit/E2E simulate the proxy by injecting/withholding markers and
+  toggling `trustServeIdentity`.)
+- **`observability`:** unit — redaction blocklist scrubs secrets / paths / args / clone-URLs
+  / branch-names from spans; exporter selection honors config (`none` default emits nothing,
+  `console`, `otlp`).
 - **Web:** Storybook stories for the shell/theme primitives; a Playwright E2E that loads the
   shell through the bearer path against a real `start(ctx)` server.
 - **CLI:** packaged-bin smoke test (`switchboard --version`, `start` boots + `/health`).

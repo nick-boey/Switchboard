@@ -8,7 +8,8 @@ endpoint, and shut down gracefully via the returned handle.
 #### Scenario: Boots and reports health
 
 - **WHEN** `start(ctx)` is called with a valid `RuntimeContext`
-- **THEN** the server listens on `127.0.0.1` and `GET /health` responds `200`
+- **THEN** the server listens on `127.0.0.1` and `GET /health` (the unauthenticated
+  liveness endpoint) responds `200`
 
 #### Scenario: Loopback bind only
 
@@ -22,24 +23,26 @@ endpoint, and shut down gracefully via the returned handle.
 
 ### Requirement: Configuration loading and validation
 
-The system SHALL load `~/.switchboard/config.json`, validate it against the shared Zod
-schema, and refuse to start on invalid configuration.
+The system SHALL provide a `loadConfig()` step that reads `~/.switchboard/config.json` and
+validates it against the shared Zod schema; it is invoked before `start(ctx)`, which
+receives the already-parsed config on its `RuntimeContext`. Startup SHALL refuse to proceed
+on invalid configuration.
 
 #### Scenario: First run creates secure defaults
 
-- **WHEN** no config file exists at startup
-- **THEN** one is created with secure defaults (including a generated bearer token) and
-  file mode `600`
+- **WHEN** `loadConfig()` runs and no config file exists
+- **THEN** one is created with secure defaults (a generated bearer token, identity trust
+  disabled) at file mode `600`
 
 #### Scenario: Invalid config refuses to start
 
-- **WHEN** the config file fails schema validation
-- **THEN** `start(ctx)` fails with a clear error naming the offending field and the server
-  does not begin listening
+- **WHEN** `loadConfig()` finds the config file fails schema validation
+- **THEN** it throws a clear error naming the offending field and startup does not proceed
+  (the server does not begin listening)
 
-#### Scenario: Valid config is exposed on the context
+#### Scenario: Parsed config is exposed on the context
 
-- **WHEN** the config file is valid
+- **WHEN** `loadConfig()` succeeds and `start(ctx)` is called with the result
 - **THEN** `RuntimeContext.config` exposes the parsed, typed values
 
 ### Requirement: Validated typed API contract

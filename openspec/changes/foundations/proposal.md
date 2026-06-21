@@ -31,7 +31,9 @@ its findings inform the auth/bind/config shape here.)
   spans) and OTLP export behind a config toggle (off by default; Seq wired later).
 - **Test harness.** Vitest (unit) and Playwright (E2E) with a **temporary-git fixture**,
   plus auth/bind-address tests, API contract tests (web↔server schema drift), and
-  token-redaction/subprocess tests. This is the harness later changes depend on.
+  telemetry-redaction tests. (Subprocess/PAT-redaction tests are deferred to
+  `repo-clone-browse`, where subprocesses and the PAT exist.) This is the harness later
+  changes depend on.
 - **Architecture model.** The permanent base **LikeC4** model under
   `docs/dev/Architecture/` (authored during implementation, validated via `site/`), since
   the LikeC4 tooling is itself a deliverable here.
