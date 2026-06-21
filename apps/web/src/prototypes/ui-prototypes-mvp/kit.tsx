@@ -1,5 +1,6 @@
 import {
   Box,
+  Button,
   Group,
   Progress,
   Stack,
@@ -486,6 +487,16 @@ export function OperationLedger({ ops, locked = false }: { ops: Operation[]; loc
                         animated={op.progress === undefined}
                         striped={op.progress === undefined}
                       />
+                    )}
+                    {op.status === 'failed' && (
+                      <Group gap="xs" mt={8}>
+                        <Button size="compact-xs" variant="default">
+                          Retry
+                        </Button>
+                        <Button size="compact-xs" variant="subtle" color="gray">
+                          Dismiss
+                        </Button>
+                      </Group>
                     )}
                   </Box>
                 </Group>

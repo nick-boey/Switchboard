@@ -37,7 +37,7 @@ const GITHUB_REPOS: Repo[] = [
     lang: 'TypeScript',
     langColor: '#3178c6',
     stars: 128,
-    updated: 'updated 2d ago',
+    updated: '2d ago',
   },
   {
     owner: 'acme',
@@ -46,7 +46,7 @@ const GITHUB_REPOS: Repo[] = [
     lang: 'TypeScript',
     langColor: '#3178c6',
     stars: 54,
-    updated: 'updated 5h ago',
+    updated: '5h ago',
   },
   {
     owner: 'octocat',
@@ -55,7 +55,7 @@ const GITHUB_REPOS: Repo[] = [
     lang: 'JavaScript',
     langColor: '#f1e05a',
     stars: 1903,
-    updated: 'updated 3w ago',
+    updated: '3w ago',
   },
   {
     owner: 'torvalds',
@@ -64,7 +64,7 @@ const GITHUB_REPOS: Repo[] = [
     lang: 'C',
     langColor: '#555555',
     stars: 178000,
-    updated: 'updated just now',
+    updated: 'now',
   },
 ];
 
@@ -103,17 +103,17 @@ function RepoRow({ repo, action, divider }: { repo: Repo; action: ReactNode; div
           <Text fz="xs" c="dimmed" lineClamp={1}>
             {repo.description}
           </Text>
-          <Group gap="md" mt={5} wrap="nowrap">
-            <Group gap={5} wrap="nowrap">
+          <Group gap="sm" mt={5} wrap="nowrap" style={{ overflow: 'hidden' }}>
+            <Group gap={5} wrap="nowrap" style={{ flex: 'none' }}>
               <LangDot color={repo.langColor} />
-              <Text fz="xs" c="dimmed">
+              <Text fz="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                 {repo.lang}
               </Text>
             </Group>
-            <Text fz="xs" c="dimmed">
+            <Text fz="xs" c="dimmed" style={{ whiteSpace: 'nowrap', flex: 'none' }}>
               ★ {repo.stars.toLocaleString()}
             </Text>
-            <Text fz="xs" c="dimmed">
+            <Text fz="xs" c="dimmed" truncate>
               {repo.updated}
             </Text>
           </Group>

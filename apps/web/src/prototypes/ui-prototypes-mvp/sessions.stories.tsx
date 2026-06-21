@@ -76,14 +76,6 @@ function SessionPanel({ s, position }: { s: Session; position: Position }) {
             {s.branch}
           </Text>
         </Group>
-        <Badge size="xs" variant="light" color="brass" style={{ flex: 'none' }}>
-          {s.model}
-        </Badge>
-      </Group>
-      <Group justify="space-between" align="center" wrap="nowrap" mt={6}>
-        <Text fz="xs" c="dimmed" ff="monospace" truncate>
-          {s.endpoint} · {s.started}
-        </Text>
         <Group gap={6} wrap="nowrap" style={{ flex: 'none' }}>
           <Button size="xs" variant="default">
             Open
@@ -92,6 +84,14 @@ function SessionPanel({ s, position }: { s: Session; position: Position }) {
             Stop
           </Button>
         </Group>
+      </Group>
+      <Group gap={8} wrap="nowrap" mt={6} style={{ minWidth: 0 }}>
+        <Badge size="xs" variant="light" color="brass" style={{ flex: 'none' }}>
+          {s.model}
+        </Badge>
+        <Text fz="xs" c="dimmed" ff="monospace" truncate>
+          {s.endpoint} · {s.started}
+        </Text>
       </Group>
     </Panel>
   );
