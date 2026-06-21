@@ -10,6 +10,8 @@
     "test": "vitest run",
     "storybook": "storybook dev -p 6006 --no-open",
     "storybook:build": "storybook build",
+    "storybook:prototypes": "storybook dev -p 6007 --no-open -c .storybook-prototypes",
+    "storybook:prototypes:build": "storybook build -c .storybook-prototypes",
     "clean": "rm -rf dist dist-types storybook-static *.tsbuildinfo"
   },
   "dependencies": {

@@ -65,7 +65,7 @@ import { Button } from "@/ui/button";
 import { definePrototypeMeta } from "../define-prototype-meta";
 
 const meta = {
-  ...definePrototypeMeta("<change-name>", {
+  ...definePrototypeMeta({
     component: Panel,
     parameters: { layout: "fullscreen" },
   }),
@@ -81,9 +81,10 @@ export const Compact: Story = {
 };
 ```
 
-The `Prototypes/<change-name>` title and the `prototype` / `!autodocs` tags are applied
-automatically by the location-based indexer in `.storybook/main.ts`; you do not write
-them by hand.
+`definePrototypeMeta` takes **no `change-name` argument and sets no `title`** — the
+`Prototypes/<change-name>/<name>` title (derived from the story file's location) and the
+`prototype` / `!autodocs` tags are applied automatically by the location-based indexer in
+`.storybook-prototypes/main.ts`; you do not write them by hand.
 
 ### 4. Record the ledger row
 
@@ -103,23 +104,27 @@ or at archive). Never invent a `promote`/`delete` disposition while still sketch
 The design system's dark mode is `prefers-color-scheme` only — there is no UI toggle, so
 dark mode is exercised by emulation.
 
-1. **Ensure Storybook is up on `:6006`.** Check `http://localhost:6006`; if it is not
-   responding, start it in the background:
+1. **Ensure the prototype workbench is up on `:6007`.** This is the dedicated prototype
+   Storybook (the production one on `:6006` excludes `src/prototypes/**`). Check
+   `http://localhost:6007`; if it is not responding, start it in the background:
    ```bash
-   pnpm storybook
+   pnpm --filter @switchboard/web storybook:prototypes
    ```
-   (run as a background task; wait for it to come up).
+   (run as a background task; wait for it to come up). Its preview wraps every story in
+   `AppProviders` with `colorScheme="auto"`, so `prefers-color-scheme` drives light/dark.
 2. **Get the story's preview URL.** Prefer the Storybook MCP server (`storybook-mcp`,
    `preview-stories` tool) to resolve the story id and URL. If the MCP endpoint is
-   unavailable, derive it: the story id is the kebab-case of the title plus `--` plus the
-   kebab-case export name (e.g. title `Prototypes/<change-name>` + export `Compact` →
-   `prototypes-<change-name>--compact`). Manager URL: `http://localhost:6006/?path=/story/<id>`;
-   isolated render for clean screenshots: `http://localhost:6006/iframe.html?id=<id>&viewMode=story`.
+   unavailable, derive it: the story id is the kebab-case of the location-derived title plus
+   `--` plus the kebab-case export name (e.g. title `Prototypes/<change-name>/density` +
+   export `Compact` → `prototypes-<change-name>-density--compact`; note Storybook drops a
+   leading `_` in ids). Most reliable is to read `http://localhost:6007/index.json` and look
+   up the entry by title. Manager URL: `http://localhost:6007/?path=/story/<id>`; isolated
+   render for clean screenshots: `http://localhost:6007/iframe.html?id=<id>&viewMode=story`.
 3. **Screenshot light and dark** with Playwright, using `emulateMedia` to drive the
    media query (use the `playwright-cli` skill / Playwright MCP):
    ```js
    await page.emulateMedia({ colorScheme: "light" });
-   await page.goto("http://localhost:6006/iframe.html?id=<id>&viewMode=story");
+   await page.goto("http://localhost:6007/iframe.html?id=<id>&viewMode=story");
    await page.screenshot({ path: "/tmp/<id>-light.png" });
    await page.emulateMedia({ colorScheme: "dark" });
    await page.reload();
