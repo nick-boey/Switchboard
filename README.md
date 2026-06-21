@@ -137,8 +137,6 @@ changes.
 
 ## Documentation
 
-- [`docs/dev/Contributing/development-workflow.md`](docs/dev/Contributing/development-workflow.md)
-  — the OpenSpec / `switch-change` guided development workflow.
 - [`docs/dev/Contributing/testing.md`](docs/dev/Contributing/testing.md) — the
   Vitest / Playwright / Storybook harness conventions.
 - [`docs/dev/Architecture`](docs/dev/Architecture) — the LikeC4 architecture model

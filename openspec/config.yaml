@@ -2,7 +2,7 @@ schema: switch-feature
 
 # Project context (optional). Shown to AI when creating artifacts.
 context: |
-  Development workflow (see docs/dev/Contributing/development-workflow.md):
+  Development workflow (driven by the /switch-change router skill):
   - Changes are created and resumed through the /switch-change router skill, which
     classifies work by SCALE, not category: switch-fix only when the change is a
     correction toward already-intended behaviour, needs no new UI pattern

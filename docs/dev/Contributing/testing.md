@@ -1,7 +1,6 @@
 # Testing
 
-Test-driven development is **mandatory** in Switchboard (see the
-[development workflow](./development-workflow.md)). Because the project is greenfield, the
+Test-driven development is **mandatory** in Switchboard. Because the project is greenfield, the
 test **harness was stood up before any feature code** — every later change's TDD depends on
 the conventions below. This document is the contract for that harness: Vitest for unit
 tests, Playwright for end-to-end tests with the temp-git fixture, the `RuntimeContext` test
@@ -136,5 +135,4 @@ are deliberately deferred to the change that introduces subprocesses and the Git
 - [`playwright.config.ts`](../../../playwright.config.ts) — e2e config.
 - [`packages/shared/src/testing`](../../../packages/shared/src/testing) — `makeTestContext`,
   `createTempGitRepo` (exported at `@switchboard/shared/testing`).
-- [`development-workflow.md`](./development-workflow.md) — where TDD sits in the workflow.
 - [`README.md`](../../../README.md) — prerequisites and the `just` recipes.
