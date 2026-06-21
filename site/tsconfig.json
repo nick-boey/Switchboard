@@ -1,0 +1,6 @@
+{
+  "//": "Astro project config. NOT part of the root `tsc -b` solution (root tsconfig.json intentionally omits `site/`); Astro is type-checked via `astro check` / its own toolchain.",
+  "extends": "astro/tsconfigs/strict",
+  "include": [".astro/types.d.ts", "**/*.astro", "src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["dist"]
+}

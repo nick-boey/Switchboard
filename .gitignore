@@ -14,6 +14,16 @@ dist-ssr/
 build/
 out/
 *.local
+dist-types/
+storybook-static/
+
+# Astro
+.astro/
+
+# Playwright
+playwright-report/
+test-results/
+.cache/playwright/
 
 # Vite / bundler caches
 .vite/

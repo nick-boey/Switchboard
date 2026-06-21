@@ -1,0 +1,10 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'site'
+
+# Approve postinstall build scripts (pnpm 11 moved this here from package.json).
+allowBuilds:
+  esbuild: true
+  protobufjs: true
+  sharp: true

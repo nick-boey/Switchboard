@@ -1,0 +1,32 @@
+{
+  "name": "@switchboard/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "storybook": "storybook dev -p 6006 --no-open",
+    "storybook:build": "storybook build",
+    "clean": "rm -rf dist dist-types storybook-static *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@mantine/core": "9.3.2",
+    "@mantine/hooks": "9.3.2",
+    "@switchboard/shared": "workspace:*",
+    "@tanstack/react-query": "5.101.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@storybook/react-vite": "10.4.6",
+    "@switchboard/server": "workspace:*",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "storybook": "10.4.6",
+    "vite": "8.0.16"
+  }
+}

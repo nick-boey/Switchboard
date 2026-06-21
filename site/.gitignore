@@ -1,0 +1,7 @@
+# Astro build output & cache
+dist/
+.astro/
+
+# LikeC4 generated artifacts (static site / exports)
+.likec4/
+likec4-build/

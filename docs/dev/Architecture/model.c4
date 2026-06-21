@@ -1,0 +1,72 @@
+// Switchboard architecture — the permanent base model (foundations).
+//
+// Element ids are FIXED by foundations design Decision 9 / plan.md "Planned
+// architecture": the system `Switchboard` with containers `Switchboard.WebSPA`,
+// `Switchboard.Api`, `Switchboard.Cli`, and the externals `GitHub`, `TmuxHost`,
+// `ClaudeBackplane`, `Tailscale`, `MobileApp`. Later changes `extend` these and add
+// `Planned/<change>.c4` `#todo` overlays — do not rename them.
+
+model {
+
+  Switchboard = system 'Switchboard' {
+    description 'Mobile-first web app for remote-controlling Claude Code sessions, reachable only over Tailscale.'
+
+    WebSPA = container 'Web SPA' {
+      description 'React + Vite + Mantine single-page app (retro switchboard theme). Calls the API through the typed Hono RPC client via TanStack Query.'
+      technology 'React, Vite, Mantine, TanStack Query'
+    }
+
+    Api = container 'API Server' {
+      description 'Hono server exposed programmatically via start(ctx: RuntimeContext). Loopback-bound behind a reject-by-default auth gate (Tailscale identity + bearer fallback), with /health and OpenTelemetry redaction.'
+      technology 'Hono, Zod, OpenTelemetry'
+    }
+
+    Cli = container 'CLI' {
+      description 'The `switchboard` bin. Builds a RuntimeContext and calls the server start(ctx) for a local run (Docker/Tailscale orchestration deferred to runtime-cli-docker).'
+      technology 'TypeScript, tsup'
+    }
+
+    // Relationships that exist in the foundations skeleton today.
+    WebSPA -> Api 'Calls over the typed Hono RPC client (TanStack Query)'
+    Cli -> Api 'Boots a local run via start(ctx)'
+  }
+
+  // --- External systems ----------------------------------------------------
+
+  GitHub = external 'GitHub' {
+    description 'Remote git hosting and pull-request APIs (PAT-authenticated).'
+  }
+
+  TmuxHost = external 'Tmux Host' {
+    description "The host's tmux sessions and the `claude` processes they run."
+  }
+
+  ClaudeBackplane = external 'Claude Backplane' {
+    description "Claude's remote-control servers that drive `claude` sessions."
+  }
+
+  Tailscale = external 'Tailscale' {
+    description 'Private mesh network. `tailscale serve` is the only ingress to the loopback-bound API.'
+  }
+
+  MobileApp = external 'Claude Mobile App' {
+    description 'The official Claude mobile app (an alternative remote-control client).'
+  }
+
+  // --- Cross-boundary relationships ----------------------------------------
+
+  // Network ingress: the API binds to loopback; serve is the exclusive front door.
+  Tailscale -> Api 'Proxies inbound requests to the loopback API (tailscale serve)'
+
+  // Intended integrations — scaffolded in foundations, behaviour lands in changes 3–6.
+  Api -> GitHub 'Clones repositories and reads/writes pull requests' {
+    #planned
+  }
+  Api -> TmuxHost 'Supervises tmux sessions and `claude` processes' {
+    #planned
+  }
+
+  // How `claude` sessions are actually driven.
+  TmuxHost -> ClaudeBackplane '`claude` processes connect for remote control'
+  MobileApp -> ClaudeBackplane 'Controls Claude sessions remotely'
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@switchboard/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "switchboard": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "clean": "rm -rf dist dist-types *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@switchboard/server": "workspace:*",
+    "@switchboard/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.0",
+    "tsup": "8.5.1"
+  }
+}

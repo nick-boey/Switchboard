@@ -1,0 +1,10 @@
+{
+  "//": "Solution-style root config — TypeScript project references to every buildable TS package/app. `site/` is an Astro project (validated separately in section 8) and is intentionally not a tsc reference.",
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./apps/server" },
+    { "path": "./apps/cli" },
+    { "path": "./apps/web" }
+  ]
+}

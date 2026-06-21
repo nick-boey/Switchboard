@@ -1,0 +1,17 @@
+# Build / tooling artifacts
+**/dist/**
+**/dist-types/**
+**/node_modules/**
+**/storybook-static/**
+**/coverage/**
+**/playwright-report/**
+**/test-results/**
+**/.astro/**
+pnpm-lock.yaml
+*.tsbuildinfo
+
+# Non-source trees (owned elsewhere / committed artifacts — not formatted by this repo's Prettier)
+.claude/**
+docs/**
+openspec/**
+spikes/**
