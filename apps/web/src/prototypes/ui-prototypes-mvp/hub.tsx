@@ -338,24 +338,21 @@ export function AddWorktreeRow({ onClick }: { onClick?: () => void }) {
       component="button"
       type="button"
       onClick={onClick}
+      aria-label="Add worktree"
       style={{
         width: '100%',
-        padding: '12px 16px',
+        padding: '14px 16px',
         background: 'none',
         border: 'none',
         borderTop: '1px dashed rgba(128,128,128,0.45)',
         cursor: 'pointer',
-        textAlign: 'left',
         color: theme.colors.patina[7],
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
+        justifyContent: 'center',
       }}
     >
       <PlusGlyph />
-      <Text fz="sm" fw={600} c="patina.7">
-        Add worktree…
-      </Text>
     </Box>
   );
 }
