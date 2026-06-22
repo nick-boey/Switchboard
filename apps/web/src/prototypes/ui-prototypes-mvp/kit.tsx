@@ -1,14 +1,13 @@
 import {
   Box,
-  Button,
   Group,
-  Progress,
   Stack,
   Text,
   useComputedColorScheme,
   useMantineTheme,
   type BoxProps,
 } from '@mantine/core';
+import { useHover } from '@mantine/hooks';
 import type { CSSProperties, ReactNode } from 'react';
 
 /**
@@ -218,41 +217,144 @@ export function Plug({
   );
 }
 
-export type LampColor = 'signal' | 'patina' | 'brass';
+/** The accent colours an {@link IconButton} can take. `neutral` is a quiet grey for non-accented actions. */
+export type AccentColor = 'signal' | 'patina' | 'brass' | 'neutral';
+
+/** rgb triples for the accent washes (theme hexes converted once — theme tokens stay out of bounds). */
+const ACCENT_RGB: Record<Exclude<AccentColor, 'neutral'>, string> = {
+  signal: '199,42,31', // signal[7]
+  patina: '44,147,135', // patina[6]
+  brass: '208,150,0', // brass[6]
+};
 
 /**
- * A flat status dot — a small filled circle with a thin ring, coloured by `color`. The lightweight
- * inline status marker for ledger rows, list items, and empty states. (Flat replacement for the
- * old glowing lamp; name kept so existing stories keep working.)
+ * A slightly-rounded square icon button — the generalised form of the worktree delete control. Takes
+ * any glyph and accent colour. By default it sits back as a soft wash of its colour that lightens on
+ * hover; `lit` fills it solid with a soft glow (the "this is now the obvious action" state, e.g. a
+ * delete that is finally safe to run).
  */
-export function IndicatorLamp({
-  color = 'signal',
-  lit = false,
-  size = 12,
+export function IconButton({
+  icon,
   label,
+  color = 'neutral',
+  lit = false,
+  size = 30,
+  onClick,
 }: {
-  color?: LampColor;
+  icon: ReactNode;
+  label: string;
+  color?: AccentColor;
   lit?: boolean;
   size?: number;
-  label?: string;
+  onClick?: () => void;
 }) {
   const theme = useMantineTheme();
-  const hue = theme.colors[color];
+  const dark = useComputedColorScheme('light') === 'dark';
+  const { hovered, ref } = useHover<HTMLButtonElement>();
+  const rgb = color === 'neutral' ? (dark ? '230,230,230' : '40,40,40') : ACCENT_RGB[color];
+  const ramp = color === 'neutral' ? null : theme.colors[color];
+  const soft = (a: number) => `rgba(${rgb},${a})`;
+  const background = lit
+    ? hovered
+      ? (ramp?.[5] ?? '#7d7d7d')
+      : (ramp?.[6] ?? (dark ? '#6a6a6a' : '#717171'))
+    : soft(hovered ? (dark ? 0.34 : 0.2) : dark ? 0.22 : 0.12);
+  const iconColor = lit ? '#fff' : (ramp?.[dark ? 4 : 7] ?? (dark ? '#d8d8d8' : '#3a3a3a'));
+  const border = lit ? (ramp?.[dark ? 5 : 7] ?? 'transparent') : soft(dark ? 0.5 : 0.38);
   return (
-    <span
-      role={label ? 'img' : undefined}
+    <Box
+      ref={ref}
+      component="button"
+      type="button"
       aria-label={label}
-      aria-hidden={label ? undefined : true}
+      onClick={onClick}
       style={{
         width: size,
         height: size,
-        borderRadius: '50%',
-        display: 'inline-block',
         flex: 'none',
-        background: lit ? hue[5] : 'transparent',
-        border: `1px solid ${lit ? hue[6] : hue[7]}`,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 7,
+        cursor: 'pointer',
+        background,
+        border: `1px solid ${border}`,
+        color: iconColor,
+        boxShadow: lit ? `0 0 10px rgba(${rgb},${dark ? 0.55 : 0.45})` : 'none',
+        transition: 'background 120ms ease, box-shadow 120ms ease, border-color 120ms ease',
       }}
-    />
+    >
+      {icon}
+    </Box>
+  );
+}
+
+/**
+ * A sunken tab/segment toggle — a recessed track with the active segment raised as a pill. The flat
+ * language's replacement for Mantine's `SegmentedControl`; its label type matches the small input
+ * text (sm / weight 400) so it reads as a quiet control rather than a button bar. Disabled options
+ * (e.g. a deferred-for-MVP path) render greyed and non-interactive.
+ */
+export function SegmentedToggle<T extends string>({
+  value,
+  onChange,
+  options,
+  fullWidth = false,
+}: {
+  value: T;
+  onChange?: (value: T) => void;
+  options: { value: T; label: ReactNode; disabled?: boolean }[];
+  fullWidth?: boolean;
+}) {
+  const dark = useComputedColorScheme('light') === 'dark';
+  const f = flat(dark);
+  return (
+    <Box
+      style={{
+        display: 'inline-flex',
+        width: fullWidth ? '100%' : undefined,
+        gap: 3,
+        padding: 3,
+        borderRadius: PANEL_RADIUS,
+        background: f.well,
+        border: `1px solid ${FLAT_DIVIDER}`,
+      }}
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <Box
+            key={opt.value}
+            component="button"
+            type="button"
+            disabled={opt.disabled}
+            aria-pressed={active}
+            onClick={() => !opt.disabled && onChange?.(opt.value)}
+            style={{
+              flex: fullWidth ? 1 : 'none',
+              padding: '5px 14px',
+              borderRadius: PANEL_RADIUS - 2,
+              border: `1px solid ${active ? f.border : 'transparent'}`,
+              background: active ? f.surface : 'transparent',
+              color: active ? f.text : dark ? '#9a9a9a' : '#6a6a6a',
+              fontSize: 'var(--mantine-font-size-sm)',
+              fontWeight: 400,
+              cursor: opt.disabled ? 'not-allowed' : 'pointer',
+              opacity: opt.disabled ? 0.4 : 1,
+              boxShadow: active
+                ? dark
+                  ? '0 1px 2px rgba(0,0,0,0.4)'
+                  : '0 1px 2px rgba(0,0,0,0.12)'
+                : 'none',
+              transition: 'background 120ms ease, color 120ms ease',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {opt.label}
+          </Box>
+        );
+      })}
+    </Box>
   );
 }
 
@@ -404,166 +506,19 @@ export function AppFrame({
   );
 }
 
-/**
- * A transient snackbar — the session-handoff instruction (plan Decision 7). A left status accent, a
- * title, body copy, and a dismiss. No screws (a snackbar is not a bolted plate).
- */
-export function Toast({
-  tone = 'patina',
-  title,
-  children,
-}: {
-  tone?: LampColor;
-  title: string;
-  children?: ReactNode;
-}) {
-  const theme = useMantineTheme();
-  return (
-    <Panel p="sm" screws={false} style={{ borderLeft: `4px solid ${theme.colors[tone][6]}` }}>
-      <Group gap="sm" wrap="nowrap" align="flex-start">
-        <Box mt={3}>
-          <IndicatorLamp color={tone} lit size={12} label={title} />
-        </Box>
-        <Box style={{ flex: 1, minWidth: 0 }}>
-          <Text fz="sm" fw={700}>
-            {title}
-          </Text>
-          {children && (
-            <Text fz="xs" c="dimmed" mt={2}>
-              {children}
-            </Text>
-          )}
-        </Box>
-        <Text fz="lg" c="dimmed" style={{ cursor: 'pointer', lineHeight: 1 }} aria-label="Dismiss">
-          ×
-        </Text>
-      </Group>
-    </Panel>
-  );
-}
-
-export type OperationStatus = 'queued' | 'running' | 'done' | 'failed';
-
-export interface Operation {
-  id: string;
-  /** What the operation is doing, e.g. "Clone acme/widget-factory". */
-  label: string;
-  status: OperationStatus;
-  /** Sub-line: percent text, branch, or an error message. */
-  detail?: string;
-  /** 0–100 for a running operation; omit for an indeterminate or non-running op. */
-  progress?: number;
-}
-
-const LAMP_FOR: Record<OperationStatus, { color: LampColor; lit: boolean }> = {
-  queued: { color: 'patina', lit: false },
-  running: { color: 'brass', lit: true },
-  done: { color: 'patina', lit: true },
-  failed: { color: 'signal', lit: true },
-};
-
-const BAR_COLOR: Record<OperationStatus, string> = {
-  queued: 'gray',
-  running: 'brass',
-  done: 'patina',
-  failed: 'signal',
-};
-
-/**
- * The operation ledger (plan Decision 3): the running record of long operations — clone, worktree
- * create, session launch — that every flow screen surfaces. A `locked` ledger shows the "LINE BUSY"
- * marker, the single-writer lock that gates further mutating actions while one is in flight.
- */
-export function OperationLedger({ ops, locked = false }: { ops: Operation[]; locked?: boolean }) {
-  return (
-    <Panel>
-      <Group justify="space-between" align="center" mb="sm">
-        <EmbossedLabel>Operation ledger</EmbossedLabel>
-        {locked && (
-          <Group gap={6} align="center">
-            <IndicatorLamp color="signal" lit size={10} label="line busy" />
-            <Text fz={11} fw={700} tt="uppercase" c="signal.7" style={{ letterSpacing: '0.12em' }}>
-              Line busy
-            </Text>
-          </Group>
-        )}
-      </Group>
-      <Panel pressed p="xs">
-        <Stack gap={0}>
-          {ops.map((op, i) => {
-            const lamp = LAMP_FOR[op.status];
-            return (
-              <Box
-                key={op.id}
-                py={8}
-                px={6}
-                style={{ borderTop: i === 0 ? undefined : `1px solid ${FLAT_DIVIDER}` }}
-              >
-                <Group gap="sm" wrap="nowrap" align="flex-start">
-                  <Box mt={3}>
-                    <IndicatorLamp color={lamp.color} lit={lamp.lit} size={12} label={op.status} />
-                  </Box>
-                  <Box style={{ flex: 1, minWidth: 0 }}>
-                    <Group justify="space-between" wrap="nowrap" gap="xs">
-                      <Text fz="sm" fw={600} truncate>
-                        {op.label}
-                      </Text>
-                      <Text fz={11} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.08em' }}>
-                        {op.status}
-                      </Text>
-                    </Group>
-                    {op.detail && (
-                      <Text
-                        fz="xs"
-                        ff="monospace"
-                        c={op.status === 'failed' ? 'signal.7' : 'dimmed'}
-                        mt={2}
-                      >
-                        {op.detail}
-                      </Text>
-                    )}
-                    {op.status === 'running' && (
-                      <Progress
-                        value={op.progress ?? 100}
-                        color={BAR_COLOR[op.status]}
-                        size="sm"
-                        mt={6}
-                        animated={op.progress === undefined}
-                        striped={op.progress === undefined}
-                      />
-                    )}
-                    {op.status === 'failed' && (
-                      <Group gap="xs" mt={8}>
-                        <Button size="compact-xs" variant="default">
-                          Retry
-                        </Button>
-                        <Button size="compact-xs" variant="subtle" color="gray">
-                          Dismiss
-                        </Button>
-                      </Group>
-                    )}
-                  </Box>
-                </Group>
-              </Box>
-            );
-          })}
-        </Stack>
-      </Panel>
-    </Panel>
-  );
-}
-
 // --- Hub indicator primitives ----------------------------------------------
-// Added for the worktrees-hub redesign. The hub needs a richer status lamp than `IndicatorLamp`
-// (five tones incl. a blue with no equivalent in `theme.ts`) and small symbol glyphs that caption
-// what each indicator column means. Kept here as flat-language primitives; the composed hub
-// components (cards, rows, drawer, modals) live in `hub.tsx`.
+// The hub's status lamp (richer than a plain dot — five tones incl. a blue with no equivalent in
+// `theme.ts`) plus the small symbol glyphs that caption what each indicator column means, and the
+// `IndicatorLight` that pairs them. Flat-language primitives; the composed hub components (cards,
+// rows, drawer, modals) live in `hub.tsx`.
 
-/** The five indicator-light tones. `blue` is local to the prototypes — there is no blue in theme.ts. */
-export type LightTone = 'neutral' | 'yellow' | 'green' | 'red' | 'blue';
+/** The indicator-light tones. `blue`/`purple` are local to the prototypes — neither exists in theme.ts. */
+export type LightTone = 'neutral' | 'yellow' | 'green' | 'red' | 'blue' | 'purple';
 
-/** Cobalt for the PR-exists lamp. Local constant (touching theme tokens is out of bounds for sketches). */
+/** Cobalt for the PR-open lamp. Local constant (touching theme tokens is out of bounds for sketches). */
 const COBALT = { light: '#2f6aa8', dark: '#6ba6e0' };
+/** Violet for the PR-merged lamp — the universal "merged" colour. Local for the same reason. */
+const VIOLET = { light: '#7048c4', dark: '#a78bea' };
 
 /**
  * A flat indicator light — a bezel-ringed lamp whose bulb is coloured by `tone` and glows softly when
@@ -586,6 +541,7 @@ export function StatusLight({
     green: theme.colors.patina[dark ? 4 : 6],
     red: theme.colors.signal[dark ? 4 : 6],
     blue: dark ? COBALT.dark : COBALT.light,
+    purple: dark ? VIOLET.dark : VIOLET.light,
   };
   const off = tone === 'neutral';
   const bezel = dark ? 'rgba(255,255,255,0.32)' : 'rgba(0,0,0,0.42)';
@@ -655,5 +611,50 @@ export function IndicatorSymbol({ kind, size = 14 }: { kind: IndicatorKind; size
       <path d="M4.5 5 V11" />
       <path d="M6 4.4 H8.6 a3 3 0 0 1 3 3 V11" />
     </svg>
+  );
+}
+
+/**
+ * A {@link StatusLight} captioned by a small symbol — the indicator the hub uses for its git/PR
+ * columns. The glyph sits above the light (default) or beside it (`inline`); both are centred so a
+ * row of them lines up. Pass either a `kind` (renders the matching {@link IndicatorSymbol}) or an
+ * arbitrary `symbol` node.
+ */
+export function IndicatorLight({
+  kind,
+  symbol,
+  tone = 'neutral',
+  size = 8,
+  symbolSize = 10,
+  inline = false,
+  label,
+}: {
+  kind?: IndicatorKind;
+  symbol?: ReactNode;
+  tone?: LightTone;
+  size?: number;
+  symbolSize?: number;
+  inline?: boolean;
+  label?: string;
+}) {
+  const glyph = symbol ?? (kind && <IndicatorSymbol kind={kind} size={symbolSize} />);
+  const content = (
+    <>
+      {glyph && (
+        <Box c="dimmed" style={{ lineHeight: 0 }}>
+          {glyph}
+        </Box>
+      )}
+      <StatusLight tone={tone} size={size} label={label} />
+    </>
+  );
+  return inline ? (
+    <Group gap={6} wrap="nowrap" align="center" style={{ lineHeight: 0 }}>
+      {content}
+    </Group>
+  ) : (
+    <Stack gap={2} align="center" style={{ lineHeight: 0 }}>
+      {content}
+    </Stack>
   );
 }

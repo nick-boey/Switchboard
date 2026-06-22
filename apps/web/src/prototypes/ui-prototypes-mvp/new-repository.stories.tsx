@@ -1,226 +1,233 @@
 import {
+  ActionIcon,
+  Autocomplete,
   Box,
   Button,
   Group,
-  SimpleGrid,
   Stack,
   Text,
   TextInput,
   useComputedColorScheme,
 } from '@mantine/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { definePrototypeMeta } from '../define-prototype-meta';
 import {
   AppFrame,
   DeviceFrame,
   EmbossedLabel,
   flat,
-  IndicatorLamp,
-  OperationLedger,
   Panel,
+  Plug,
+  SegmentedToggle,
   StatusLight,
-  type Operation,
 } from './kit';
 
 /**
- * The **New repository** page — reached from the drawer's "New repository" button (was the standalone
- * repo-browser; confirms `repo-clone-browse`). Two ways to add a repo: clone one of your GitHub repos
- * from the list, or paste a git URL. Every clone lands in
- * `~/.switchboard/repos/<organisation>/<repo>` and runs through the operation ledger. Mobile-first +
- * desktop; renders browse / cloning (ledger + lock) / error. Static fake data only.
+ * The **New repository** page — reached from the drawer's "New repository" button. A guided *clone /
+ * create* flow, not a repo browser. A source toggle (GitHub · Local) sits on top; Local is **deferred
+ * for the MVP** (disabled). Under GitHub a second toggle chooses how to pick the repo:
+ *
+ *   Select repository → editable Organisation dropdown (your orgs, validated) + editable Repository
+ *                       dropdown (the repos in that org); Clone is enabled once both resolve.
+ *   From URL          → one validated field accepting `https://github.com/<org>/<repo>` or `<org>/<repo>`.
+ *
+ * Cloning itself no longer lives here: clicking Clone takes you to the repository page, which shows a
+ * **"getting ready"** state (saga-driven — retried / abortable) until the clone completes. The
+ * `GettingReady` story sketches that destination. Static fake data only.
  *
  * Click actions:
- *   ‹ Worktrees      → back to the hub
- *   Clone (row)       → bare-clone into ~/.switchboard/repos/<owner>/<repo> (runs through the ledger)
- *   Clone from URL    → same, for an arbitrary git remote
+ *   ‹ back            → back to the hub
+ *   GitHub / Local    → choose the source (Local disabled for the MVP)
+ *   Select / From URL → choose how to identify the GitHub repo
+ *   Clone             → start the clone → repository page in its "getting ready" state
  */
 
-interface GhRepo {
-  owner: string;
-  name: string;
-  description: string;
-  lang: string;
-  langColor: string;
-  stars: number;
-  updated: string;
+// --- Fake data --------------------------------------------------------------
+
+/** The signed-in user's organisations and the repositories under each (what the dropdowns offer). */
+const ORG_REPOS: Record<string, string[]> = {
+  'nick-boey': ['switchboard', 'dotfiles', 'operator-blog'],
+  acme: ['widget-factory', 'design-tokens', 'infra'],
+  octocat: ['Hello-World', 'Spoon-Knife'],
+};
+const ORGS = Object.keys(ORG_REPOS);
+
+/** Accept `https://github.com/<org>/<repo>(.git)` or a bare `<org>/<repo>`; null if it doesn't parse. */
+function parseRepoUrl(input: string): { owner: string; repo: string } | null {
+  const s = input.trim();
+  if (!s) return null;
+  const m = s.match(/^(?:https?:\/\/github\.com\/)?([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/);
+  return m ? { owner: m[1], repo: m[2] } : null;
 }
 
-const GITHUB_REPOS: GhRepo[] = [
-  {
-    owner: 'nick-boey',
-    name: 'switchboard',
-    description: 'Operator console for driving Claude sessions from your phone',
-    lang: 'TypeScript',
-    langColor: '#3178c6',
-    stars: 128,
-    updated: '2d ago',
-  },
-  {
-    owner: 'acme',
-    name: 'widget-factory',
-    description: 'Reusable widget components and design tokens',
-    lang: 'TypeScript',
-    langColor: '#3178c6',
-    stars: 54,
-    updated: '5h ago',
-  },
-  {
-    owner: 'octocat',
-    name: 'Hello-World',
-    description: 'My first repository on GitHub!',
-    lang: 'JavaScript',
-    langColor: '#f1e05a',
-    stars: 1903,
-    updated: '3w ago',
-  },
-  {
-    owner: 'torvalds',
-    name: 'linux',
-    description: 'Linux kernel source tree',
-    lang: 'C',
-    langColor: '#555555',
-    stars: 178000,
-    updated: 'now',
-  },
-];
+// --- Small pieces -----------------------------------------------------------
 
-function LangDot({ color }: { color: string }) {
-  return (
-    <Box
-      style={{
-        width: 9,
-        height: 9,
-        borderRadius: '50%',
-        background: color,
-        border: '1px solid rgba(0,0,0,0.25)',
-        flex: 'none',
-      }}
-    />
-  );
-}
+/** A left-pointing chevron for the back button — no icon library, so an inline glyph. */
+const ChevronLeft = () => (
+  <svg
+    width={16}
+    height={16}
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    <path d="M12.5 5 L7.5 10 L12.5 15" />
+  </svg>
+);
 
-/** One browsable GitHub repo with a clone action (or a "cloned" marker once it is local). */
-function GithubRepoRow({
-  repo,
-  cloned,
-  locked,
-  divider,
-}: {
-  repo: GhRepo;
-  cloned: boolean;
-  locked: boolean;
-  divider: boolean;
-}) {
+/** A validity dot for an input's right edge — green when the value resolves, red when it doesn't. */
+function Validity({ ok }: { ok: boolean }) {
   return (
-    <Box
-      py={10}
-      px={6}
-      style={{ borderTop: divider ? '1px solid rgba(128,128,128,0.25)' : undefined }}
-    >
-      <Group justify="space-between" wrap="nowrap" align="flex-start" gap="sm">
-        <Box style={{ flex: 1, minWidth: 0 }}>
-          <Text fz="sm" truncate>
-            <Text span c="dimmed">
-              {repo.owner}/
-            </Text>
-            <Text span fw={700}>
-              {repo.name}
-            </Text>
-          </Text>
-          <Text fz="xs" c="dimmed" lineClamp={1}>
-            {repo.description}
-          </Text>
-          <Group gap="sm" mt={5} wrap="nowrap" style={{ overflow: 'hidden' }}>
-            <Group gap={5} wrap="nowrap" style={{ flex: 'none' }}>
-              <LangDot color={repo.langColor} />
-              <Text fz="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                {repo.lang}
-              </Text>
-            </Group>
-            <Text fz="xs" c="dimmed" style={{ whiteSpace: 'nowrap', flex: 'none' }}>
-              ★ {repo.stars.toLocaleString()}
-            </Text>
-            <Text fz="xs" c="dimmed" truncate>
-              {repo.updated}
-            </Text>
-          </Group>
-        </Box>
-        <Box style={{ flex: 'none' }}>
-          {cloned ? (
-            <Group gap={6} wrap="nowrap">
-              <StatusLight tone="green" size={10} />
-              <Text fz="xs" c="patina.7" fw={600}>
-                cloned
-              </Text>
-            </Group>
-          ) : (
-            <Button size="xs" disabled={locked}>
-              {locked ? 'Queued' : 'Clone'}
-            </Button>
-          )}
-        </Box>
-      </Group>
+    <Box pr={4} style={{ lineHeight: 0 }}>
+      <StatusLight tone={ok ? 'green' : 'red'} size={10} label={ok ? 'valid' : 'not found'} />
     </Box>
   );
 }
 
-/** The GitHub list: search over your repos, each with a clone action. */
-function GithubRepoList({ cloned, locked }: { cloned: Set<string>; locked: boolean }) {
-  return (
-    <Panel>
-      <EmbossedLabel>Clone from GitHub · nick-boey</EmbossedLabel>
-      <TextInput mt="sm" size="sm" placeholder="Search your repositories…" defaultValue="" />
-      <Panel pressed p="xs" mt="sm">
-        <Stack gap={0}>
-          {GITHUB_REPOS.map((repo, i) => (
-            <GithubRepoRow
-              key={`${repo.owner}/${repo.name}`}
-              repo={repo}
-              cloned={cloned.has(`${repo.owner}/${repo.name}`)}
-              locked={locked}
-              divider={i > 0}
-            />
-          ))}
-        </Stack>
-      </Panel>
-    </Panel>
-  );
-}
+// --- GitHub · Select repository ---------------------------------------------
 
-/** Clone an arbitrary remote by URL — the "select a new repo to clone" path. */
-function CloneFromUrl({ locked }: { locked: boolean }) {
+/** Editable Organisation + Repository dropdowns, both validated against the user's GitHub access. */
+function SelectRepository() {
+  const [org, setOrg] = useState('nick-boey');
+  const [repo, setRepo] = useState('');
+  const orgValid = ORGS.includes(org);
+  const repos = orgValid ? ORG_REPOS[org] : [];
+  const repoValid = repos.includes(repo);
   return (
     <Panel>
-      <EmbossedLabel>Clone from URL</EmbossedLabel>
+      <EmbossedLabel>Select a repository</EmbossedLabel>
       <Stack gap="sm" mt="sm">
-        <TextInput size="sm" placeholder="https://github.com/owner/repo.git" defaultValue="" />
-        <Group gap={8} wrap="nowrap" align="center">
-          <IndicatorLamp color="patina" size={9} />
-          <Text fz="xs" c="dimmed">
-            Clones into{' '}
-            <Text span ff="monospace">
-              ~/.switchboard/repos/&lt;org&gt;/&lt;repo&gt;
-            </Text>
-          </Text>
-        </Group>
-        <Button disabled={locked} variant="default">
-          {locked ? 'Line busy…' : 'Clone repository'}
+        <Autocomplete
+          size="sm"
+          label="Organisation"
+          placeholder="Your organisations"
+          data={ORGS}
+          value={org}
+          onChange={(v) => {
+            setOrg(v);
+            setRepo('');
+          }}
+          rightSection={org ? <Validity ok={orgValid} /> : null}
+          error={org && !orgValid ? 'No access to this organisation' : undefined}
+          comboboxProps={{ withinPortal: false }}
+        />
+        <Autocomplete
+          size="sm"
+          label="Repository"
+          placeholder={orgValid ? 'Pick or type a repository' : 'Choose an organisation first'}
+          data={repos}
+          value={repo}
+          onChange={setRepo}
+          disabled={!orgValid}
+          rightSection={repo ? <Validity ok={repoValid} /> : null}
+          error={repo && !repoValid ? 'Not a repository in this organisation' : undefined}
+          comboboxProps={{ withinPortal: false }}
+        />
+        <Button fullWidth disabled={!(orgValid && repoValid)}>
+          Clone
         </Button>
       </Stack>
     </Panel>
   );
 }
 
-interface ScreenProps {
-  cloned?: string[];
-  ledger?: Operation[];
-  locked?: boolean;
-  desktop?: boolean;
+// --- GitHub · From URL ------------------------------------------------------
+
+/** One validated field that accepts a full GitHub URL or a bare owner/repo, with a parsed preview. */
+function FromUrl() {
+  const [url, setUrl] = useState('');
+  const parsed = parseRepoUrl(url);
+  const valid = parsed !== null;
+  return (
+    <Panel>
+      <EmbossedLabel>From URL</EmbossedLabel>
+      <Stack gap="sm" mt="sm">
+        <TextInput
+          size="sm"
+          label="Repository URL"
+          placeholder="https://github.com/owner/repo  ·  owner/repo"
+          value={url}
+          onChange={(e) => setUrl(e.currentTarget.value)}
+          rightSection={url ? <Validity ok={valid} /> : null}
+          error={url && !valid ? 'Use https://github.com/<org>/<repo> or <org>/<repo>' : undefined}
+        />
+        <Group gap={6} wrap="nowrap" align="center" style={{ minHeight: 18 }}>
+          {parsed && (
+            <>
+              <Text fz="xs" c="dimmed">
+                Clones
+              </Text>
+              <Text fz="xs" ff="monospace" fw={700}>
+                {parsed.owner}/{parsed.repo}
+              </Text>
+            </>
+          )}
+        </Group>
+        <Button fullWidth disabled={!valid}>
+          Clone
+        </Button>
+      </Stack>
+    </Panel>
+  );
 }
 
-function NewRepository({ cloned = [], ledger, locked = false, desktop = false }: ScreenProps) {
-  const clonedSet = new Set(cloned);
+// --- Local (deferred for the MVP) -------------------------------------------
+
+/** Create a brand-new local repository. Deferred for the MVP — sketched so the design is on record. */
+function LocalRepo() {
+  const [name, setName] = useState('');
+  return (
+    <Panel>
+      <EmbossedLabel>New local repository</EmbossedLabel>
+      <Stack gap="sm" mt="sm">
+        <Group gap={8} wrap="nowrap" align="center">
+          <StatusLight tone="yellow" size={10} />
+          <Text fz="xs" c="dimmed">
+            Deferred for the MVP — creating local repositories isn’t enabled yet.
+          </Text>
+        </Group>
+        <TextInput
+          size="sm"
+          label="Repository name"
+          placeholder="my-project"
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          disabled
+        />
+        <Text fz="xs" c="dimmed">
+          Creates an empty repo in{' '}
+          <Text span ff="monospace">
+            ~/.switchboard/repos/local/&lt;name&gt;
+          </Text>
+          . GitHub features (PRs, clone status) stay disabled until you push it to a remote.
+        </Text>
+        <Button fullWidth disabled>
+          Create repository
+        </Button>
+      </Stack>
+    </Panel>
+  );
+}
+
+// --- Screen -----------------------------------------------------------------
+
+interface ScreenProps {
+  source?: 'github' | 'local';
+  method?: 'select' | 'url';
+}
+
+function NewRepository({
+  source: initialSource = 'github',
+  method: initialMethod = 'select',
+}: ScreenProps) {
+  const [source, setSource] = useState<'github' | 'local'>(initialSource);
+  const [method, setMethod] = useState<'select' | 'url'>(initialMethod);
+
   const status = (
     <Group gap={8} wrap="nowrap">
       <StatusLight tone="green" size={11} />
@@ -230,42 +237,92 @@ function NewRepository({ cloned = [], ledger, locked = false, desktop = false }:
     </Group>
   );
 
-  const breadcrumb = (
-    <Panel pressed p="xs">
-      <Group gap={8} wrap="nowrap">
-        <Text fz="xs" c="dimmed">
-          ‹ Worktrees
-        </Text>
-        <Text fz="xs" c="dimmed">
-          /
-        </Text>
-        <Text fz="sm" fw={700}>
-          New repository
-        </Text>
-      </Group>
-    </Panel>
+  const header = (
+    <Group gap="xs" wrap="nowrap" align="center">
+      <ActionIcon variant="subtle" color="gray" aria-label="Back to worktrees">
+        <ChevronLeft />
+      </ActionIcon>
+      <Text fz="lg" fw={700}>
+        New repository
+      </Text>
+    </Group>
   );
 
   return (
     <AppFrame status={status}>
-      <Stack gap="md">
-        {breadcrumb}
-        {ledger && <OperationLedger ops={ledger} locked={locked} />}
-        {desktop ? (
-          <SimpleGrid cols={2} spacing="md">
-            <GithubRepoList cloned={clonedSet} locked={locked} />
-            <CloneFromUrl locked={locked} />
-          </SimpleGrid>
+      <Stack gap="md" maw={560} mx="auto" w="100%">
+        {header}
+        <SegmentedToggle
+          fullWidth
+          value={source}
+          onChange={setSource}
+          options={[
+            { value: 'github', label: 'GitHub' },
+            { value: 'local', label: 'Local', disabled: true },
+          ]}
+        />
+        {source === 'github' ? (
+          <Stack gap="md">
+            <SegmentedToggle
+              fullWidth
+              value={method}
+              onChange={setMethod}
+              options={[
+                { value: 'select', label: 'Select repository' },
+                { value: 'url', label: 'From URL' },
+              ]}
+            />
+            {method === 'select' ? <SelectRepository /> : <FromUrl />}
+          </Stack>
         ) : (
-          <>
-            <GithubRepoList cloned={clonedSet} locked={locked} />
-            <CloneFromUrl locked={locked} />
-          </>
+          <LocalRepo />
         )}
       </Stack>
     </AppFrame>
   );
 }
+
+/**
+ * The repository page in its **getting ready** state — where Clone actually lands. The clone runs as a
+ * saga (retried on failure, abortable); the page stands in as the repo until it's ready. Its real home
+ * is the worktrees hub; sketched here so the clone flow's destination is visible.
+ */
+function GettingReady({ repo = 'acme/widget-factory' }: { repo?: string }) {
+  const status = (
+    <Group gap={8} wrap="nowrap">
+      <StatusLight tone="yellow" size={11} />
+      <Text fz="xs" fw={600}>
+        getting ready
+      </Text>
+    </Group>
+  );
+  return (
+    <AppFrame status={status}>
+      <Stack align="center" gap="md" py={56}>
+        <Plug status="working" size={30} label="cloning" />
+        <Text fz="sm" fw={700}>
+          Getting ready…
+        </Text>
+        <Text fz="xs" c="dimmed" ta="center" maw={300}>
+          Cloning{' '}
+          <Text span ff="monospace">
+            {repo}
+          </Text>{' '}
+          into{' '}
+          <Text span ff="monospace">
+            ~/.switchboard/repos
+          </Text>
+          . This page becomes the repository once it’s ready.
+        </Text>
+        <Button variant="default" color="signal">
+          Abort clone
+        </Button>
+      </Stack>
+    </AppFrame>
+  );
+}
+
+// --- Meta + framing ---------------------------------------------------------
 
 const meta = {
   ...definePrototypeMeta({
@@ -292,60 +349,47 @@ function Frame({ width, children }: { width: number; children: ReactNode }) {
   );
 }
 
-/** Browse — clone from GitHub or by URL; one repo already cloned this session. */
+/** Mobile — clone a GitHub repo by selecting an organisation and repository. */
 export const Mobile: Story = {
   render: () => (
     <Frame width={PHONE}>
-      <NewRepository cloned={['nick-boey/switchboard']} />
+      <NewRepository />
     </Frame>
   ),
 };
 
-/** Cloning — a clone running through the ledger into ~/.switchboard/repos; the line is locked. */
-export const MobileCloning: Story = {
+/** From URL — paste a GitHub URL or a bare owner/repo; the field validates and previews the target. */
+export const MobileFromUrl: Story = {
   render: () => (
     <Frame width={PHONE}>
-      <NewRepository
-        cloned={['nick-boey/switchboard']}
-        locked
-        ledger={[
-          {
-            id: 'op-clone-wf',
-            label: 'Clone acme/widget-factory',
-            status: 'running',
-            detail: 'Receiving objects · 62% → ~/.switchboard/repos/acme/widget-factory',
-            progress: 62,
-          },
-        ]}
-      />
+      <NewRepository method="url" />
     </Frame>
   ),
 };
 
-/** Error — a clone failed (auth). The line is released; the failed op stays in the ledger to retry. */
-export const MobileError: Story = {
+/** Local (deferred) — the create-a-local-repo design, disabled for the MVP. */
+export const MobileLocal: Story = {
   render: () => (
     <Frame width={PHONE}>
-      <NewRepository
-        cloned={['nick-boey/switchboard']}
-        ledger={[
-          {
-            id: 'op-clone-linux',
-            label: 'Clone torvalds/linux',
-            status: 'failed',
-            detail: 'authentication failed — check your GitHub token in ~/.switchboard',
-          },
-        ]}
-      />
+      <NewRepository source="local" />
     </Frame>
   ),
 };
 
-/** Desktop — the same page as a two-column GitHub / URL layout. */
+/** Getting ready — the repository page after Clone: the saga runs while the page says "getting ready". */
+export const MobileGettingReady: Story = {
+  render: () => (
+    <Frame width={PHONE}>
+      <GettingReady />
+    </Frame>
+  ),
+};
+
+/** Desktop — the same guided flow, centred. */
 export const Desktop: Story = {
   render: () => (
     <Frame width={DESKTOP}>
-      <NewRepository cloned={['nick-boey/switchboard', 'acme/widget-factory']} desktop />
+      <NewRepository />
     </Frame>
   ),
 };

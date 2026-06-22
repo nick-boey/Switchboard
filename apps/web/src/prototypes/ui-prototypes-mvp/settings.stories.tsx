@@ -1,8 +1,33 @@
-import { Box, Group, SimpleGrid, Stack, Text, useComputedColorScheme } from '@mantine/core';
+import {
+  ActionIcon,
+  Box,
+  Group,
+  SimpleGrid,
+  Stack,
+  Text,
+  useComputedColorScheme,
+} from '@mantine/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ReactNode } from 'react';
 import { definePrototypeMeta } from '../define-prototype-meta';
 import { AppFrame, DeviceFrame, EmbossedLabel, flat, Panel, StatusLight } from './kit';
+
+/** A left-pointing chevron for the back button — no icon library, so an inline glyph. */
+const ChevronLeft = () => (
+  <svg
+    width={16}
+    height={16}
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    <path d="M12.5 5 L7.5 10 L12.5 15" />
+  </svg>
+);
 
 /**
  * The **Settings** page — reached from the drawer's Settings button. A read-only stub for the MVP:
@@ -19,14 +44,21 @@ function SettingRow({
   value,
   tone,
   note,
+  divider = true,
 }: {
   label: string;
   value: string;
   tone?: 'green' | 'yellow' | 'red' | 'neutral';
   note?: string;
+  /** Top divider — off for the first row so the pressed panel has no rule flush to its top edge. */
+  divider?: boolean;
 }) {
   return (
-    <Box py={9} px={6} style={{ borderTop: '1px solid rgba(128,128,128,0.25)' }}>
+    <Box
+      py={9}
+      px={6}
+      style={{ borderTop: divider ? '1px solid rgba(128,128,128,0.25)' : undefined }}
+    >
       <Group justify="space-between" wrap="nowrap" align="flex-start" gap="sm">
         <Box style={{ flex: 1, minWidth: 0 }}>
           <Text fz="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: '0.08em' }}>
@@ -72,25 +104,26 @@ function Settings({ desktop = false }: { desktop?: boolean }) {
     </Group>
   );
 
-  const breadcrumb = (
-    <Panel pressed p="xs">
-      <Group gap={8} wrap="nowrap">
-        <Text fz="xs" c="dimmed">
-          ‹ Worktrees
-        </Text>
-        <Text fz="xs" c="dimmed">
-          /
-        </Text>
-        <Text fz="sm" fw={700}>
-          Settings
-        </Text>
-      </Group>
-    </Panel>
+  const header = (
+    <Group gap="xs" wrap="nowrap" align="center">
+      <ActionIcon variant="subtle" color="gray" aria-label="Back to worktrees">
+        <ChevronLeft />
+      </ActionIcon>
+      <Text fz="lg" fw={700}>
+        Settings
+      </Text>
+    </Group>
   );
 
   const github = (
     <SettingsGroup title="GitHub">
-      <SettingRow label="Account" value="nick-boey" tone="green" note="authenticated via PAT" />
+      <SettingRow
+        label="Account"
+        value="nick-boey"
+        tone="green"
+        note="authenticated via PAT"
+        divider={false}
+      />
       <SettingRow
         label="Personal access token"
         value="ghp_••••••••••••3f2a"
@@ -106,6 +139,7 @@ function Settings({ desktop = false }: { desktop?: boolean }) {
         label="Clone location"
         value="~/.switchboard/repos/<org>/<repo>"
         note="bare clone in /.bare, worktrees alongside"
+        divider={false}
       />
       <SettingRow label="Repositories cloned" value="3" />
     </SettingsGroup>
@@ -118,6 +152,7 @@ function Settings({ desktop = false }: { desktop?: boolean }) {
         value="sb_••••••••••••9c41"
         tone="green"
         note="written to ~/.switchboard by the CLI"
+        divider={false}
       />
       <SettingRow label="Tailscale serve" value="switchboard.tailnet.ts.net" tone="green" />
     </SettingsGroup>
@@ -126,14 +161,7 @@ function Settings({ desktop = false }: { desktop?: boolean }) {
   return (
     <AppFrame status={status}>
       <Stack gap="md">
-        {breadcrumb}
-        <Text fz="xs" c="dimmed">
-          Read-only for the MVP — tokens are written to{' '}
-          <Text span ff="monospace">
-            ~/.switchboard
-          </Text>{' '}
-          by the CLI.
-        </Text>
+        {header}
         {desktop ? (
           <SimpleGrid cols={2} spacing="md">
             {github}

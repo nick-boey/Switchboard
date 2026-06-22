@@ -1,4 +1,4 @@
-import { Box, Group, Stack, Text, useComputedColorScheme } from '@mantine/core';
+import { Box, Button, Group, Stack, Text, useComputedColorScheme } from '@mantine/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ReactNode } from 'react';
 import { definePrototypeMeta } from '../define-prototype-meta';
@@ -17,6 +17,7 @@ import {
   groupByOrg,
   HubShell,
   IndicatorActionModal,
+  PlusGlyph,
   RepoBlock,
   RepoDrawer,
   StopSessionModal,
@@ -35,7 +36,8 @@ import {
  * Indicator legend (see the `Legend` story for the on-screen version):
  *   Plug   green inner = Claude Code live · neutral inner = idle worktree
  *   Git    neutral = up to date · yellow = behind · green = ahead · red = diverged
- *   PR     neutral = none · blue = open · green = ready · red = checks failing · yellow = conflicts
+ *   PR     neutral = none · blue = open · green = ready · red = checks failing · yellow = conflicts · purple = merged
+ *   Delete lit (bright red) only when a worktree is idle AND its PR is merged — i.e. safe to remove
  *
  * Click actions are documented in `hub.tsx`'s header and surfaced in the `Legend` story.
  */
@@ -100,8 +102,8 @@ const REPOS: HubRepo[] = [
         path: '.worktrees/chore-bump-deps',
         dirty: 'clean',
         active: false,
-        remote: 'ahead',
-        pr: 'ready',
+        remote: 'behind',
+        pr: 'merged',
       },
     ],
   },
@@ -156,25 +158,18 @@ interface HubProps {
   inactiveOn?: boolean;
 }
 
-function EmptyHub() {
+function EmptyHub({ onClone }: { onClone?: () => void }) {
   return (
-    <Panel pressed>
-      <Stack gap={6} align="center" py="xl">
+    <Panel>
+      <Stack gap="md" align="center" py="xl">
         <Plug status="off" size={24} label="no repositories" />
         <Text fz="sm" fw={700}>
           No repositories cloned yet
         </Text>
-        <Text fz="xs" c="dimmed" ta="center" maw={280}>
-          Use{' '}
-          <Text span fw={700}>
-            New repository
-          </Text>{' '}
-          in the drawer to clone one into{' '}
-          <Text span ff="monospace">
-            ~/.switchboard/repos
-          </Text>
-          .
-        </Text>
+        {/* Primary CTA → the New repository / clone page (same destination as the drawer button). */}
+        <Button size="sm" leftSection={<PlusGlyph />} onClick={onClone}>
+          New repository
+        </Button>
       </Stack>
     </Panel>
   );
@@ -445,6 +440,11 @@ function Legend() {
             term="Merge conflicts (yellow)"
             action="Open with conflicts (red if checks also fail)"
           />
+          <LegendRow
+            swatch={<StatusLight tone="purple" />}
+            term="Merged (purple)"
+            action="PR merged — the branch's work is integrated"
+          />
           <Text fz="xs" c="dimmed">
             Click → status / action modal (deferred).
           </Text>
@@ -465,7 +465,9 @@ function Legend() {
             <Text span fw={700}>
               Delete
             </Text>{' '}
-            — trash button on the right of each row removes the worktree.
+            — red square on the right of the indicator row removes the worktree. It lights up bright
+            red once the worktree is idle and its PR is merged (safe to remove); otherwise it sits
+            back as a darker red.
           </Text>
           <Text fz="sm">
             <Text span fw={700}>

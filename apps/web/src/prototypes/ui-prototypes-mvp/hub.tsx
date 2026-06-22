@@ -4,7 +4,6 @@ import {
   Button,
   Group,
   ScrollArea,
-  SegmentedControl,
   Select,
   Stack,
   Text,
@@ -12,14 +11,17 @@ import {
   useComputedColorScheme,
   useMantineTheme,
 } from '@mantine/core';
-import type { ReactNode } from 'react';
+import { useHover } from '@mantine/hooks';
+import { useState, type ReactNode } from 'react';
 import {
   EmbossedLabel,
   flat,
   FLAT_DIVIDER,
-  IndicatorSymbol,
+  IconButton,
+  IndicatorLight,
   Plug,
   Panel,
+  SegmentedToggle,
   StatusLight,
   type LightTone,
 } from './kit';
@@ -65,7 +67,8 @@ export type PrStatus =
   | 'ready'
   | 'checks-failing'
   | 'conflicts'
-  | 'conflicts-failing';
+  | 'conflicts-failing'
+  | 'merged';
 
 export interface HubWorktree {
   branch: string;
@@ -109,6 +112,7 @@ const PR_TONE: Record<PrStatus, LightTone> = {
   'checks-failing': 'red',
   conflicts: 'yellow',
   'conflicts-failing': 'red',
+  merged: 'purple',
 };
 const PR_LABEL: Record<PrStatus, string> = {
   none: 'PR: none open',
@@ -117,6 +121,7 @@ const PR_LABEL: Record<PrStatus, string> = {
   'checks-failing': 'PR: checks failing',
   conflicts: 'PR: merge conflicts',
   'conflicts-failing': 'PR: merge conflicts + checks failing',
+  merged: 'PR: merged',
 };
 
 // --- Small glyphs (no icon library installed; inline SVG keeps it dependency-free) ---
@@ -162,7 +167,7 @@ const GearGlyph = () => (
     }
   />
 );
-const PlusGlyph = () => <Glyph d={<path d="M10 4.5 V15.5 M4.5 10 H15.5" />} />;
+export const PlusGlyph = () => <Glyph d={<path d="M10 4.5 V15.5 M4.5 10 H15.5" />} />;
 const SearchGlyph = () => (
   <Glyph
     size={15}
@@ -176,14 +181,6 @@ const SearchGlyph = () => (
 );
 const MenuGlyph = () => <Glyph d={<path d="M3.5 6 H16.5 M3.5 10 H16.5 M3.5 14 H16.5" />} />;
 const CloseGlyph = () => <Glyph size={15} d={<path d="M5 5 L15 15 M15 5 L5 15" />} />;
-const FolderGlyph = () => (
-  <Glyph
-    size={15}
-    d={
-      <path d="M3 6 a1 1 0 0 1 1-1 h3 l1.5 1.5 H16 a1 1 0 0 1 1 1 V15 a1 1 0 0 1 -1 1 H4 a1 1 0 0 1 -1 -1 Z" />
-    }
-  />
-);
 
 // --- Interactive controls ---------------------------------------------------
 
@@ -234,21 +231,6 @@ export function PlugControl({ active, onClick }: { active: boolean; onClick?: ()
   );
 }
 
-/**
- * A status lamp captioned by its very small symbol above it. The glyph+lamp group is vertically
- * centred so it lines up with the (larger) plug on the worktree row.
- */
-function LampStack({ kind, tone }: { kind: 'git' | 'pr'; tone: LightTone }) {
-  return (
-    <Stack gap={2} align="center" style={{ lineHeight: 0 }}>
-      <Box c="dimmed" style={{ lineHeight: 0 }}>
-        <IndicatorSymbol kind={kind} size={10} />
-      </Box>
-      <StatusLight tone={tone} size={8} />
-    </Stack>
-  );
-}
-
 /** Git-status lamp (symbol above). Click → IndicatorActionModal (deferred: pull / push / …). */
 export function GitStatusLight({
   status,
@@ -259,7 +241,7 @@ export function GitStatusLight({
 }) {
   return (
     <LampButton label={REMOTE_LABEL[status]} onClick={onClick}>
-      <LampStack kind="git" tone={REMOTE_TONE[status]} />
+      <IndicatorLight kind="git" tone={REMOTE_TONE[status]} size={8} symbolSize={10} />
     </LampButton>
   );
 }
@@ -268,23 +250,31 @@ export function GitStatusLight({
 export function PrStatusLight({ status, onClick }: { status: PrStatus; onClick?: () => void }) {
   return (
     <LampButton label={PR_LABEL[status]} onClick={onClick}>
-      <LampStack kind="pr" tone={PR_TONE[status]} />
+      <IndicatorLight kind="pr" tone={PR_TONE[status]} size={8} symbolSize={10} />
     </LampButton>
   );
 }
 
-/** Delete the worktree. The only plain button on the row's right edge (brief). */
-export function DeleteWorktreeButton({ onClick }: { onClick?: () => void }) {
+/**
+ * Delete the worktree — the signal-red {@link IconButton} in the indicator row beside the plug and
+ * lamps. `lit` (the worktree is idle AND its PR is merged, so the work is integrated and the checkout
+ * is safe to remove) fills it bright red with a glow; otherwise it sits back as a darker, recessed red.
+ */
+export function DeleteWorktreeButton({
+  lit = false,
+  onClick,
+}: {
+  lit?: boolean;
+  onClick?: () => void;
+}) {
   return (
-    <ActionIcon
-      variant="subtle"
-      color="gray"
-      size="md"
-      aria-label="Delete worktree"
+    <IconButton
+      icon={<TrashGlyph />}
+      label="Delete worktree"
+      color="signal"
+      lit={lit}
       onClick={onClick}
-    >
-      <TrashGlyph />
-    </ActionIcon>
+    />
   );
 }
 
@@ -299,9 +289,9 @@ export interface WorktreeHandlers {
 
 /**
  * One worktree as a full-width section inside its repo card. Row 1 is the branch name across the
- * panel with the delete button trailing; row 2 is the plug + git/PR lamps (each capped by its small
- * symbol), left-aligned (plug larger, lamps smaller). A full-width divider separates it from the
- * worktree above.
+ * panel; row 2 carries the controls — the plug + git/PR lamps (each capped by its small symbol)
+ * on the left, with the delete button aligned to the right edge of the same row. A full-width
+ * divider separates it from the worktree above.
  */
 export function WorktreeRow({
   wt,
@@ -311,30 +301,39 @@ export function WorktreeRow({
   onPr,
   onDelete,
 }: { wt: HubWorktree; divider: boolean } & WorktreeHandlers) {
+  // Idle worktree whose PR is merged → the work is integrated and the checkout is safe to remove.
+  const deletable = !wt.active && wt.pr === 'merged';
   return (
     <Box px="md" py="sm" style={{ borderTop: divider ? `1px solid ${FLAT_DIVIDER}` : undefined }}>
-      <Group justify="space-between" wrap="nowrap" gap="xs">
-        <Text fz="sm" fw={700} ff="monospace" truncate>
-          {wt.branch}
-        </Text>
-        <DeleteWorktreeButton onClick={() => onDelete?.(wt)} />
-      </Group>
-      <Group gap={14} wrap="nowrap" mt={8} align="center">
-        <PlugControl active={wt.active} onClick={() => onPlug?.(wt)} />
-        <Group gap={10} wrap="nowrap" align="center">
-          <GitStatusLight status={wt.remote} onClick={() => onGit?.(wt)} />
-          <PrStatusLight status={wt.pr} onClick={() => onPr?.(wt)} />
+      <Text fz="sm" fw={700} ff="monospace" truncate>
+        {wt.branch}
+      </Text>
+      <Group justify="space-between" wrap="nowrap" mt={8} align="center">
+        <Group gap={14} wrap="nowrap" align="center">
+          <PlugControl active={wt.active} onClick={() => onPlug?.(wt)} />
+          <Group gap={10} wrap="nowrap" align="center">
+            <GitStatusLight status={wt.remote} onClick={() => onGit?.(wt)} />
+            <PrStatusLight status={wt.pr} onClick={() => onPr?.(wt)} />
+          </Group>
         </Group>
+        <DeleteWorktreeButton lit={deletable} onClick={() => onDelete?.(wt)} />
       </Group>
     </Box>
   );
 }
 
-/** The empty section at the bottom of every card — click guides the user through creating a worktree. */
+/**
+ * The empty section at the bottom of every card — click guides the user through creating a worktree.
+ * Hovering lights the whole bottom section with a subtle patina wash so it reads as one tappable
+ * target rather than a lone glyph.
+ */
 export function AddWorktreeRow({ onClick }: { onClick?: () => void }) {
   const theme = useMantineTheme();
+  const dark = useComputedColorScheme('light') === 'dark';
+  const { hovered, ref } = useHover<HTMLButtonElement>();
   return (
     <Box
+      ref={ref}
       component="button"
       type="button"
       onClick={onClick}
@@ -342,14 +341,19 @@ export function AddWorktreeRow({ onClick }: { onClick?: () => void }) {
       style={{
         width: '100%',
         padding: '14px 16px',
-        background: 'none',
         border: 'none',
         borderTop: '1px dashed rgba(128,128,128,0.45)',
         cursor: 'pointer',
-        color: theme.colors.patina[7],
+        background: hovered
+          ? dark
+            ? 'rgba(44,147,135,0.16)'
+            : 'rgba(44,147,135,0.1)'
+          : 'transparent',
+        color: hovered ? theme.colors.patina[dark ? 4 : 6] : theme.colors.patina[7],
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        transition: 'background 120ms ease, color 120ms ease',
       }}
     >
       <PlusGlyph />
@@ -425,15 +429,28 @@ function FilterChip({
   on: boolean;
   onClick?: () => void;
 }) {
+  const dark = useComputedColorScheme('light') === 'dark';
+  const f = flat(dark);
+  // Quiet, recessed chip: no fill, just a faint outline; text matches the sm search input (14px / 400).
   return (
     <Button
       size="compact-sm"
       radius="xl"
-      variant={on ? 'light' : 'default'}
-      color={on ? 'patina' : 'gray'}
+      variant="default"
       onClick={onClick}
       leftSection={<StatusLight tone={on ? tone : 'neutral'} size={10} />}
-      styles={{ root: { opacity: on ? 1 : 0.6 } }}
+      styles={{
+        root: {
+          '--button-bg': 'transparent',
+          '--button-hover': f.subtle,
+          '--button-bd': `1px solid ${f.border}`,
+          '--button-color': f.text,
+          fontSize: 'var(--mantine-font-size-sm)',
+          fontWeight: 400,
+          opacity: on ? 1 : 0.55,
+        },
+        label: { fontWeight: 400 },
+      }}
     >
       {label}
     </Button>
@@ -823,21 +840,28 @@ export function StopSessionModal({
   );
 }
 
-/** Guides the user through creating a worktree: new vs existing branch, base branch (default main).
- * On create → a worktree is created but Claude Code stays OFF (plug starts neutral). */
+/**
+ * Guides the user through creating a worktree: new vs existing branch (a sunken toggle) over a base
+ * branch (default main). Two actions fill the modal foot — "Create worktree" leaves Claude Code off,
+ * "Create worktree and run" creates it and starts `claude --remote-control` straight away. Dismiss is
+ * the header close (no separate Cancel button).
+ */
 export function CreateWorktreeModal({
   repo,
   baseBranches = ['main', 'develop', 'release/1.0'],
   mode = 'new',
   onCreate,
+  onCreateAndRun,
   onCancel,
 }: {
   repo: string;
   baseBranches?: string[];
   mode?: 'new' | 'existing';
   onCreate?: () => void;
+  onCreateAndRun?: () => void;
   onCancel?: () => void;
 }) {
+  const [branchMode, setBranchMode] = useState<'new' | 'existing'>(mode);
   return (
     <ModalSheet title="New worktree" onClose={onCancel}>
       <Stack gap="sm">
@@ -849,16 +873,16 @@ export function CreateWorktreeModal({
             {repo}
           </Text>
         </Group>
-        <SegmentedControl
+        <SegmentedToggle
           fullWidth
-          size="sm"
-          defaultValue={mode}
-          data={[
-            { label: 'New branch', value: 'new' },
-            { label: 'Existing branch', value: 'existing' },
+          value={branchMode}
+          onChange={setBranchMode}
+          options={[
+            { value: 'new', label: 'New branch' },
+            { value: 'existing', label: 'Existing branch' },
           ]}
         />
-        {mode === 'new' ? (
+        {branchMode === 'new' ? (
           <TextInput size="sm" label="Branch name" placeholder="feature/remote-control" />
         ) : (
           <Select
@@ -876,24 +900,14 @@ export function CreateWorktreeModal({
           data={baseBranches}
           comboboxProps={{ withinPortal: false }}
         />
-        <Group gap={8} wrap="nowrap" align="flex-start">
-          <Box mt={2} c="dimmed" style={{ lineHeight: 0 }}>
-            <FolderGlyph />
-          </Box>
-          <Text fz="xs" c="dimmed">
-            Checked out under{' '}
-            <Text span ff="monospace">
-              ~/.switchboard/repos/{repo}/
-            </Text>
-            . Claude Code stays off — switch the plug on when you’re ready.
-          </Text>
-        </Group>
-        <Group justify="flex-end" gap="xs" mt="xs">
-          <Button variant="default" onClick={onCancel}>
-            Cancel
+        <Stack gap="xs" mt="xs">
+          <Button fullWidth onClick={onCreateAndRun}>
+            Create worktree and run
           </Button>
-          <Button onClick={onCreate}>Create worktree</Button>
-        </Group>
+          <Button fullWidth variant="default" onClick={onCreate}>
+            Create worktree
+          </Button>
+        </Stack>
       </Stack>
     </ModalSheet>
   );

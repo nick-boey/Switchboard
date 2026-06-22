@@ -1,18 +1,64 @@
-import { Box, Button, Group, SimpleGrid, Stack, Text, Title, useMantineTheme } from '@mantine/core';
+import {
+  Autocomplete,
+  Box,
+  Button,
+  Group,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+  useMantineTheme,
+} from '@mantine/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { ReactNode } from 'react';
-import { EmbossedPanel } from '../../components/EmbossedPanel';
+import { useState, type ReactNode } from 'react';
 import type { SwitchboardTokens } from '../../theme/theme';
 import { definePrototypeMeta } from '../define-prototype-meta';
 import {
   DeviceFrame,
   EmbossedLabel,
-  IndicatorLamp,
+  IconButton,
+  IndicatorLight,
   Panel,
   Plug,
   SectionTitle,
+  SegmentedToggle,
   type PlugStatus,
 } from './kit';
+
+/** Inline glyphs for the icon-button showcase (no icon library; matches the hub's glyph style). */
+const glyph = (d: ReactNode, size = 15) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.6}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    {d}
+  </svg>
+);
+const TrashIcon = () =>
+  glyph(
+    <>
+      <path d="M4 6 H16" />
+      <path d="M8 6 V4.5 a1 1 0 0 1 1-1 h2 a1 1 0 0 1 1 1 V6" />
+      <path d="M6 6 V15.5 a1 1 0 0 0 1 1 h6 a1 1 0 0 0 1-1 V6" />
+    </>,
+  );
+const PlusIcon = () => glyph(<path d="M10 4.5 V15.5 M4.5 10 H15.5" />);
+const RefreshIcon = () =>
+  glyph(
+    <>
+      <path d="M15.5 6.5 a6 6 0 1 0 1 4" />
+      <path d="M15.5 3.5 V6.5 H12.5" />
+    </>,
+  );
 
 /**
  * The design-language gallery for `ui-prototypes-mvp` — the living definition of the visual
@@ -22,7 +68,7 @@ import {
  * rendered, not imagined.
  */
 
-function GalleryShell({ children }: { children: ReactNode }) {
+function GalleryShell({ children }: { children?: ReactNode }) {
   return (
     <Box p="xl" style={{ minHeight: '100vh', background: 'var(--mantine-color-body)' }}>
       <Stack gap="xl" maw={960} mx="auto">
@@ -121,27 +167,6 @@ export const Surfaces: Story = {
             </Text>
           </Panel>
         </Panel>
-
-        <SectionTitle>Flat (this change) vs. emboss (prior pass)</SectionTitle>
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
-          <Panel>
-            <Text fw={700} fz="sm" mb={4}>
-              Flat Panel (this change)
-            </Text>
-            <Text fz="sm">
-              Outline + corner screws, no shadow. Adapts: cream in light, charcoal in dark.
-            </Text>
-          </Panel>
-          <EmbossedPanel>
-            <Text fw={700} fz="sm" mb={4}>
-              EmbossedPanel (prior / current primitive)
-            </Text>
-            <Text fz="sm">
-              The heavy-emboss skeuomorphic surface from the first pass — kept here only for
-              comparison.
-            </Text>
-          </EmbossedPanel>
-        </SimpleGrid>
       </GalleryShell>
     );
   },
@@ -194,17 +219,40 @@ const PLUGS: { status: PlugStatus; label: string }[] = [
   { status: 'off', label: 'off' },
 ];
 
-export const Controls: Story = {
-  render: () => (
+/** A stacked indicator light (symbol above the lamp) with a caption beneath, for the catalogue. */
+function LightSwatch({
+  kind,
+  tone,
+  caption,
+}: {
+  kind: 'git' | 'pr' | 'plug';
+  tone: 'neutral' | 'yellow' | 'green' | 'red' | 'blue' | 'purple';
+  caption: string;
+}) {
+  return (
+    <Stack align="center" gap={4}>
+      <IndicatorLight kind={kind} tone={tone} size={12} symbolSize={14} />
+      <Text fz="xs" c="dimmed">
+        {caption}
+      </Text>
+    </Stack>
+  );
+}
+
+function ControlsGallery() {
+  const [branch, setBranch] = useState<'new' | 'existing'>('new');
+  const [source, setSource] = useState<'github' | 'local'>('github');
+  return (
     <GalleryShell>
       <Title order={2} tt="uppercase" style={{ letterSpacing: '0.1em' }}>
         Controls &amp; indicators
       </Title>
+
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
         <Panel>
           <EmbossedLabel>Plugs</EmbossedLabel>
           <Text fz="xs" c="dimmed" mt={6}>
-            Thin outer ring, thick inner disc coloured by status.
+            Thin outer ring, thick inner disc coloured by status — the line/session indicator.
           </Text>
           <Group mt="md" gap="lg">
             {PLUGS.map((p) => (
@@ -219,29 +267,97 @@ export const Controls: Story = {
         </Panel>
 
         <Panel>
-          <EmbossedLabel>Status dots</EmbossedLabel>
+          <EmbossedLabel>Indicator lights</EmbossedLabel>
           <Text fz="xs" c="dimmed" mt={6}>
-            The lightweight inline marker for list rows.
+            A bezel-ringed lamp capped by a small symbol naming its column (git / PR / plug).
           </Text>
-          <Stack mt="md" gap="xs">
-            <Group gap="sm">
-              <IndicatorLamp color="patina" lit label="connected" />
-              <Text fz="sm">connected</Text>
-            </Group>
-            <Group gap="sm">
-              <IndicatorLamp color="brass" lit label="working" />
-              <Text fz="sm">working…</Text>
-            </Group>
-            <Group gap="sm">
-              <IndicatorLamp color="signal" lit label="error" />
-              <Text fz="sm">line fault</Text>
-            </Group>
-            <Group gap="sm">
-              <IndicatorLamp color="patina" label="idle" />
-              <Text fz="sm" c="dimmed">
-                idle
-              </Text>
-            </Group>
+          <Group mt="md" gap="lg">
+            <LightSwatch kind="git" tone="neutral" caption="up to date" />
+            <LightSwatch kind="git" tone="yellow" caption="behind" />
+            <LightSwatch kind="git" tone="green" caption="ahead" />
+            <LightSwatch kind="git" tone="red" caption="diverged" />
+          </Group>
+          <Group mt="md" gap="lg">
+            <LightSwatch kind="pr" tone="blue" caption="open" />
+            <LightSwatch kind="pr" tone="green" caption="ready" />
+            <LightSwatch kind="pr" tone="red" caption="failing" />
+            <LightSwatch kind="pr" tone="purple" caption="merged" />
+          </Group>
+        </Panel>
+      </SimpleGrid>
+
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
+        <Panel>
+          <EmbossedLabel>Icon buttons</EmbossedLabel>
+          <Text fz="xs" c="dimmed" mt={6}>
+            Any glyph in a soft, rounded square of its accent colour; <code>lit</code> fills it
+            solid.
+          </Text>
+          <Group mt="md" gap="md" align="center">
+            <IconButton icon={<TrashIcon />} label="delete" color="signal" />
+            <IconButton icon={<RefreshIcon />} label="refresh" color="patina" />
+            <IconButton icon={<PlusIcon />} label="add" color="brass" />
+            <IconButton icon={<RefreshIcon />} label="neutral" color="neutral" />
+            <Text fz="xs" c="dimmed">
+              lit →
+            </Text>
+            <IconButton icon={<TrashIcon />} label="delete (lit)" color="signal" lit />
+          </Group>
+        </Panel>
+
+        <Panel>
+          <EmbossedLabel>Toggle buttons</EmbossedLabel>
+          <Text fz="xs" c="dimmed" mt={6}>
+            Sunken track, active segment raised. Small text matching inputs; supports disabled
+            options.
+          </Text>
+          <Stack mt="md" gap="sm" align="flex-start">
+            <SegmentedToggle
+              value={branch}
+              onChange={setBranch}
+              options={[
+                { value: 'new', label: 'New branch' },
+                { value: 'existing', label: 'Existing branch' },
+              ]}
+            />
+            <SegmentedToggle
+              value={source}
+              onChange={setSource}
+              options={[
+                { value: 'github', label: 'GitHub' },
+                { value: 'local', label: 'Local', disabled: true },
+              ]}
+            />
+          </Stack>
+        </Panel>
+      </SimpleGrid>
+
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
+        <Panel>
+          <EmbossedLabel>Dropdown selectors</EmbossedLabel>
+          <Stack mt="md" gap="sm">
+            <Select
+              size="sm"
+              label="Select (fixed list)"
+              defaultValue="main"
+              data={['main', 'develop', 'release/1.0']}
+              comboboxProps={{ withinPortal: false }}
+            />
+            <Autocomplete
+              size="sm"
+              label="Autocomplete (editable)"
+              placeholder="Type or pick an organisation"
+              data={['nick-boey', 'acme', 'octocat']}
+              comboboxProps={{ withinPortal: false }}
+            />
+          </Stack>
+        </Panel>
+
+        <Panel>
+          <EmbossedLabel>Inputs</EmbossedLabel>
+          <Stack mt="md" gap="sm">
+            <TextInput size="sm" label="Text field" placeholder="Search repositories…" />
+            <TextInput size="sm" label="With value" defaultValue="feature/remote-control" />
           </Stack>
         </Panel>
       </SimpleGrid>
@@ -270,5 +386,9 @@ export const Controls: Story = {
         </Group>
       </Section>
     </GalleryShell>
-  ),
+  );
+}
+
+export const Controls: Story = {
+  render: () => <ControlsGallery />,
 };
