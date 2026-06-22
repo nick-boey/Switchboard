@@ -16,7 +16,7 @@ repo on disk, and nothing downstream in the MVP can run.
 
 Adds two host integrations to the `Switchboard.Api` container: a **GitHub service** (GitHub
 REST via a fine-grained PAT behind an OAuth-ready provider interface) and a **Git service**
-that performs a **bare clone** into `repos/<repo-id>/.bare` and lists already-cloned repos
+that performs a **bare clone** into `~/.switchboard/repos/<owner>/<repo>/.bare` and lists already-cloned repos
 from disk. This realizes the base model's `#planned` `Switchboard.Api -> GitHub`
 relationship. The clone is a long-running operation, so it runs through the filesystem
 **operation ledger + lock** under `~/.switchboard` (idempotency, serialization,
@@ -45,7 +45,7 @@ Architecture review checkpoint fires when that overlay lands.
 
 Inherited from the programme page's locked cross-cutting decisions: GitHub **PAT** behind an
 OAuth-ready provider interface; git **credential-helper** token handling with subprocess +
-redaction tests proving no leak; bare-clone on-disk layout `repos/<repo-id>/.bare`;
+redaction tests proving no leak; bare-clone on-disk layout `~/.switchboard/repos/<owner>/<repo>/.bare`;
 **owner/repo-namespaced `<repo-id>`**; **operation ledger + lock** for the clone.
 Change-specific decisions are recorded at full-planning time.
 

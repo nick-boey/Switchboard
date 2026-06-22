@@ -1,318 +1,499 @@
-import {
-  Box,
-  Button,
-  Group,
-  SegmentedControl,
-  Select,
-  SimpleGrid,
-  Stack,
-  Text,
-  TextInput,
-} from '@mantine/core';
+import { Box, Group, Stack, Text, useComputedColorScheme } from '@mantine/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ReactNode } from 'react';
 import { definePrototypeMeta } from '../define-prototype-meta';
 import {
-  AppFrame,
   DeviceFrame,
   EmbossedLabel,
-  IndicatorLamp,
-  OperationLedger,
+  flat,
+  IndicatorSymbol,
   Panel,
-  type Operation,
+  Plug,
+  SectionTitle,
+  StatusLight,
 } from './kit';
+import {
+  CreateWorktreeModal,
+  groupByOrg,
+  HubShell,
+  IndicatorActionModal,
+  RepoBlock,
+  RepoDrawer,
+  StopSessionModal,
+  WorktreeSearchBar,
+  type HubRepo,
+} from './hub';
 
 /**
- * Screen 2 of the MVP flow — list a cloned repo's worktrees and create a new one, branching from a
- * new or existing branch (confirms the `worktree-management` change). Mobile-first with a desktop
- * variant; renders empty (only `main`), in-progress (a create running through the ledger, line
- * locked), and error (create failed) states. Static fake data only.
+ * Screen 2 (now the **centre of the app**) — the worktrees hub. A cloned-repos drawer (persistent
+ * rail on desktop, slide-in overlay on mobile) sits beside the main pane: a search + Active/Inactive
+ * filter bar over org→repo headings, each repo a card whose worktrees are sections. Every section
+ * carries a **plug** (Claude Code on/off), a **git-status lamp**, a **PR-status lamp**, and a delete
+ * button; an empty "Add worktree…" row caps each card. Built entirely from the composed components in
+ * `hub.tsx`. Static fake data only.
+ *
+ * Indicator legend (see the `Legend` story for the on-screen version):
+ *   Plug   green inner = Claude Code live · neutral inner = idle worktree
+ *   Git    neutral = up to date · yellow = behind · green = ahead · red = diverged
+ *   PR     neutral = none · blue = open · green = ready · red = checks failing · yellow = conflicts
+ *
+ * Click actions are documented in `hub.tsx`'s header and surfaced in the `Legend` story.
  */
 
-interface Worktree {
-  branch: string;
-  path: string;
-  /** 'clean', or a short dirty summary like '3 changes'. */
-  status: string;
-  /** Whether a `claude --remote-control` session is live on this worktree. */
-  session: boolean;
+// --- Fake data --------------------------------------------------------------
+
+const REPOS: HubRepo[] = [
+  {
+    id: 'nick-boey/switchboard',
+    org: 'nick-boey',
+    name: 'switchboard',
+    worktrees: [
+      {
+        branch: 'main',
+        path: 'main (primary checkout)',
+        dirty: 'clean',
+        active: false,
+        remote: 'up-to-date',
+        pr: 'none',
+      },
+      {
+        branch: 'feature/remote-control',
+        path: '.worktrees/feature-remote-control',
+        dirty: '3 changes',
+        active: true,
+        remote: 'ahead',
+        pr: 'open',
+      },
+      {
+        branch: 'fix/clone-retry',
+        path: '.worktrees/fix-clone-retry',
+        dirty: 'clean',
+        active: false,
+        remote: 'behind',
+        pr: 'checks-failing',
+      },
+    ],
+  },
+  {
+    id: 'acme/widget-factory',
+    org: 'acme',
+    name: 'widget-factory',
+    worktrees: [
+      {
+        branch: 'main',
+        path: 'main (primary checkout)',
+        dirty: 'clean',
+        active: false,
+        remote: 'up-to-date',
+        pr: 'none',
+      },
+      {
+        branch: 'spike/ui-tokens',
+        path: '.worktrees/spike-ui-tokens',
+        dirty: '2 changes',
+        active: true,
+        remote: 'diverged',
+        pr: 'conflicts-failing',
+      },
+      {
+        branch: 'chore/bump-deps',
+        path: '.worktrees/chore-bump-deps',
+        dirty: 'clean',
+        active: false,
+        remote: 'ahead',
+        pr: 'ready',
+      },
+    ],
+  },
+  {
+    id: 'octocat/Hello-World',
+    org: 'octocat',
+    name: 'Hello-World',
+    worktrees: [
+      {
+        branch: 'main',
+        path: 'main (primary checkout)',
+        dirty: 'clean',
+        active: false,
+        remote: 'up-to-date',
+        pr: 'none',
+      },
+    ],
+  },
+];
+
+/** Filter the dataset the way the search + filter chips would (so a static story can show the result). */
+function filterRepos(
+  repos: HubRepo[],
+  query: string,
+  activeOn: boolean,
+  inactiveOn: boolean,
+): HubRepo[] {
+  const q = query.trim().toLowerCase();
+  return repos
+    .map((repo) => {
+      const repoMatch = `${repo.org}/${repo.name}`.toLowerCase().includes(q);
+      const worktrees = repo.worktrees.filter((wt) => {
+        const activeOk = wt.active ? activeOn : inactiveOn;
+        const queryOk = !q || repoMatch || wt.branch.toLowerCase().includes(q);
+        return activeOk && queryOk;
+      });
+      return { ...repo, worktrees };
+    })
+    .filter((repo) => repo.worktrees.length > 0);
 }
 
-const REPO = 'switchboard';
+// --- Hub composition --------------------------------------------------------
 
-function WorktreeRow({ wt, divider }: { wt: Worktree; divider: boolean }) {
-  const dirty = wt.status !== 'clean';
+interface HubProps {
+  repos?: HubRepo[];
+  desktop?: boolean;
+  drawerOpen?: boolean;
+  overlay?: ReactNode;
+  selectedRepoId?: string;
+  query?: string;
+  activeOn?: boolean;
+  inactiveOn?: boolean;
+}
+
+function EmptyHub() {
   return (
-    <Box
-      py={10}
-      px={6}
-      style={{ borderTop: divider ? '1px solid rgba(120,90,40,0.18)' : undefined }}
-    >
-      <Group justify="space-between" wrap="nowrap" align="flex-start" gap="sm">
-        <Box style={{ flex: 1, minWidth: 0 }}>
-          <Group gap={8} wrap="nowrap">
-            <Text fz="sm" fw={700} ff="monospace" truncate>
-              {wt.branch}
-            </Text>
-            {wt.session && (
-              <Group gap={4} wrap="nowrap">
-                <IndicatorLamp color="patina" lit size={9} label="session live" />
-                <Text
-                  fz={10}
-                  c="patina.7"
-                  fw={700}
-                  tt="uppercase"
-                  style={{ letterSpacing: '0.08em' }}
-                >
-                  live
-                </Text>
-              </Group>
-            )}
-          </Group>
-          <Text fz="xs" c="dimmed" ff="monospace" truncate>
-            {wt.path}
+    <Panel pressed>
+      <Stack gap={6} align="center" py="xl">
+        <Plug status="off" size={24} label="no repositories" />
+        <Text fz="sm" fw={700}>
+          No repositories cloned yet
+        </Text>
+        <Text fz="xs" c="dimmed" ta="center" maw={280}>
+          Use{' '}
+          <Text span fw={700}>
+            New repository
+          </Text>{' '}
+          in the drawer to clone one into{' '}
+          <Text span ff="monospace">
+            ~/.switchboard/repos
           </Text>
-          <Group gap={6} mt={4} wrap="nowrap">
-            <IndicatorLamp color={dirty ? 'brass' : 'patina'} lit={dirty} size={9} />
-            <Text fz="xs" c="dimmed">
-              {wt.status}
-            </Text>
-          </Group>
-        </Box>
-        <Box style={{ flex: 'none' }}>
-          <Button size="xs" variant={wt.session ? 'default' : 'filled'}>
-            {wt.session ? 'Open' : 'Launch →'}
-          </Button>
-        </Box>
-      </Group>
-    </Box>
-  );
-}
-
-function CreateWorktree({ locked = false }: { locked?: boolean }) {
-  return (
-    <Panel>
-      <EmbossedLabel>Create worktree</EmbossedLabel>
-      <Stack gap="sm" mt="sm">
-        <SegmentedControl
-          fullWidth
-          size="sm"
-          defaultValue="new"
-          data={[
-            { label: 'New branch', value: 'new' },
-            { label: 'Existing branch', value: 'existing' },
-          ]}
-        />
-        <TextInput
-          size="sm"
-          label="Branch name"
-          placeholder="feature/remote-control"
-          defaultValue=""
-        />
-        <Select
-          size="sm"
-          label="Base branch"
-          defaultValue="main"
-          data={['main', 'develop', 'release/1.0']}
-          comboboxProps={{ withinPortal: false }}
-        />
-        <Button disabled={locked}>{locked ? 'Line busy…' : 'Create worktree'}</Button>
+          .
+        </Text>
       </Stack>
     </Panel>
   );
 }
 
-interface ScreenProps {
-  worktrees: Worktree[];
-  ledger?: Operation[];
-  locked?: boolean;
-  desktop?: boolean;
-}
+function Hub({
+  repos = REPOS,
+  desktop = false,
+  drawerOpen = false,
+  overlay,
+  selectedRepoId,
+  query = '',
+  activeOn = true,
+  inactiveOn = true,
+}: HubProps) {
+  const visible = filterRepos(repos, query, activeOn, inactiveOn);
+  // Sorted by org then repo name; each repo renders as its own heading + card (no org-group card).
+  const repoList = groupByOrg(visible).flatMap((g) => g.repos);
+  const liveCount = repos.flatMap((r) => r.worktrees).filter((w) => w.active).length;
 
-function Worktrees({ worktrees, ledger, locked = false, desktop = false }: ScreenProps) {
   const status = (
     <Group gap={8} wrap="nowrap">
-      <IndicatorLamp color="brass" lit size={11} label="repo" />
-      <Text fz="xs" fw={600} ff="monospace">
-        {REPO}
+      <StatusLight tone={liveCount > 0 ? 'green' : 'neutral'} size={11} />
+      <Text fz="xs" fw={600}>
+        {liveCount} live
       </Text>
     </Group>
   );
 
-  const context = (
-    <Panel pressed p="xs">
-      <Group gap={8} wrap="nowrap">
-        <Text fz="xs" c="dimmed">
-          ‹ Repositories
-        </Text>
-        <Text fz="xs" c="dimmed">
-          /
-        </Text>
-        <Text fz="sm" fw={700} ff="monospace">
-          {REPO}
-        </Text>
-      </Group>
-    </Panel>
+  const drawer = (
+    <RepoDrawer
+      repos={repos}
+      selectedRepoId={selectedRepoId}
+      onClose={desktop ? undefined : () => {}}
+    />
   );
 
-  const list = (
-    <Panel>
-      <Group justify="space-between" align="center">
-        <EmbossedLabel>Worktrees</EmbossedLabel>
-        <Text fz="xs" c="dimmed">
-          {worktrees.length} active
-        </Text>
-      </Group>
-      {worktrees.length <= 1 ? (
-        <Panel pressed mt="sm">
-          <Stack gap={4} align="center" py="lg">
-            <IndicatorLamp color="patina" size={16} label="no worktrees" />
-            <Text fz="sm" fw={600}>
-              Only{' '}
-              <Text span ff="monospace">
-                main
-              </Text>{' '}
-              so far
-            </Text>
-            <Text fz="xs" c="dimmed" ta="center" maw={260}>
-              Create a worktree to run an isolated session without disturbing your checkout.
-            </Text>
-          </Stack>
-        </Panel>
+  const main = (
+    <Stack gap="lg">
+      <WorktreeSearchBar query={query} activeOn={activeOn} inactiveOn={inactiveOn} />
+      {repoList.length === 0 ? (
+        <EmptyHub />
       ) : (
-        <Panel pressed p="xs" mt="sm">
-          <Stack gap={0}>
-            {worktrees.map((wt, i) => (
-              <WorktreeRow key={wt.branch} wt={wt} divider={i > 0} />
-            ))}
-          </Stack>
-        </Panel>
+        repoList.map((repo) => (
+          <RepoBlock key={repo.id} repo={repo} highlight={repo.id === selectedRepoId} />
+        ))
       )}
-    </Panel>
+    </Stack>
   );
 
   return (
-    <AppFrame status={status}>
-      <Stack gap="md">
-        {context}
-        {ledger && <OperationLedger ops={ledger} locked={locked} />}
-        {desktop ? (
-          <SimpleGrid cols={2} spacing="md">
-            {list}
-            <CreateWorktree locked={locked} />
-          </SimpleGrid>
-        ) : (
-          <>
-            {list}
-            <CreateWorktree locked={locked} />
-          </>
-        )}
-      </Stack>
-    </AppFrame>
+    <HubShell
+      desktop={desktop}
+      drawer={drawer}
+      drawerOpen={drawerOpen}
+      status={status}
+      overlay={overlay}
+    >
+      {main}
+    </HubShell>
   );
 }
 
-const MAIN: Worktree = {
-  branch: 'main',
-  path: '~/repos/switchboard',
-  status: 'clean',
-  session: false,
-};
-const FEATURE: Worktree = {
-  branch: 'feature/remote-control',
-  path: '.worktrees/feature-remote-control',
-  status: '3 changes',
-  session: true,
-};
-const FIX: Worktree = {
-  branch: 'fix/clone-retry',
-  path: '.worktrees/fix-clone-retry',
-  status: 'clean',
-  session: false,
-};
+// --- Meta + framing ---------------------------------------------------------
 
 const meta = {
   ...definePrototypeMeta({
-    component: Worktrees,
+    component: Hub,
     parameters: { layout: 'fullscreen' },
   }),
-} satisfies Meta<typeof Worktrees>;
+} satisfies Meta<typeof Hub>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
 const PHONE = 390;
-const DESKTOP = 1120;
+const DESKTOP = 1180;
 
 function Frame({ width, children }: { width: number; children: ReactNode }) {
+  const dark = useComputedColorScheme('light') === 'dark';
   return (
     <Box
       p="lg"
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        background: 'var(--mantine-color-default)',
-      }}
+      style={{ display: 'flex', justifyContent: 'center', background: flat(dark).ground }}
     >
       <DeviceFrame width={width}>{children}</DeviceFrame>
     </Box>
   );
 }
 
-/** Empty — only `main` exists; the create panel is the call to action. */
+// --- Stories ----------------------------------------------------------------
+
+/** Mobile, drawer closed — the hub as the landing screen: search/filter bar over org→repo cards. */
 export const Mobile: Story = {
   render: () => (
     <Frame width={PHONE}>
-      <Worktrees worktrees={[MAIN]} />
+      <Hub />
     </Frame>
   ),
 };
 
-/** In-progress — a worktree create running through the ledger; line locked. */
-export const MobileCreating: Story = {
+/** Mobile, drawer open — the repositories overlay (cloned repos by org · New repository · Settings). */
+export const MobileDrawer: Story = {
   render: () => (
     <Frame width={PHONE}>
-      <Worktrees
-        worktrees={[MAIN, FEATURE]}
-        locked
-        ledger={[
-          {
-            id: 'op-wt-create',
-            label: 'Create worktree fix/clone-retry',
-            status: 'running',
-            detail: 'checking out from main',
-            progress: undefined,
-          },
-        ]}
-      />
+      <Hub drawerOpen selectedRepoId="nick-boey/switchboard" />
     </Frame>
   ),
 };
 
-/** Error — create failed because the branch already exists. */
-export const MobileError: Story = {
+/** Mobile, filtered — the Active-only chip (Inactive off) narrows each card to its live worktrees. */
+export const MobileFiltered: Story = {
   render: () => (
     <Frame width={PHONE}>
-      <Worktrees
-        worktrees={[MAIN, FEATURE]}
-        ledger={[
-          {
-            id: 'op-wt-create',
-            label: 'Create worktree feature/remote-control',
-            status: 'failed',
-            detail: "fatal: a branch named 'feature/remote-control' already exists",
-          },
-        ]}
-      />
+      <Hub query="" activeOn inactiveOn={false} />
     </Frame>
   ),
 };
 
-/** Desktop variant — list and create side by side, with a populated worktree list. */
+/** Add worktree — the empty card row opened the create modal (base branch defaults to main). */
+export const MobileCreateWorktree: Story = {
+  render: () => (
+    <Frame width={PHONE}>
+      <Hub overlay={<CreateWorktreeModal repo="nick-boey/switchboard" />} />
+    </Frame>
+  ),
+};
+
+/** Stop session — clicking a LIVE (green) plug raises the warning before stopping Claude Code. */
+export const MobileStopSession: Story = {
+  render: () => (
+    <Frame width={PHONE}>
+      <Hub overlay={<StopSessionModal branch="feature/remote-control" />} />
+    </Frame>
+  ),
+};
+
+/** Indicator action — clicking a git/PR lamp opens its (deferred) action modal. */
+export const MobileIndicatorAction: Story = {
+  render: () => (
+    <Frame width={PHONE}>
+      <Hub overlay={<IndicatorActionModal kind="pr" detail="PR #42 · checks failing" />} />
+    </Frame>
+  ),
+};
+
+/** Empty — nothing cloned yet; the hub points at New repository. */
+export const MobileEmpty: Story = {
+  render: () => (
+    <Frame width={PHONE}>
+      <Hub repos={[]} />
+    </Frame>
+  ),
+};
+
+/** Desktop — persistent repo rail beside the same org→repo cards. */
 export const Desktop: Story = {
   render: () => (
     <Frame width={DESKTOP}>
-      <Worktrees worktrees={[MAIN, FEATURE, FIX]} desktop />
+      <Hub desktop selectedRepoId="nick-boey/switchboard" />
+    </Frame>
+  ),
+};
+
+// --- On-screen interaction legend (documents every click) -------------------
+
+function LegendRow({ swatch, term, action }: { swatch: ReactNode; term: string; action: string }) {
+  return (
+    <Group gap="sm" wrap="nowrap" align="flex-start">
+      <Box style={{ width: 28, display: 'flex', justifyContent: 'center', flex: 'none' }}>
+        {swatch}
+      </Box>
+      <Box style={{ flex: 1, minWidth: 0 }}>
+        <Text fz="sm" fw={700}>
+          {term}
+        </Text>
+        <Text fz="xs" c="dimmed">
+          {action}
+        </Text>
+      </Box>
+    </Group>
+  );
+}
+
+function Legend() {
+  return (
+    <Stack gap="lg">
+      <Panel>
+        <EmbossedLabel>Plug — Claude Code</EmbossedLabel>
+        <Stack gap="sm" mt="sm">
+          <LegendRow
+            swatch={<Plug status="running" size={20} />}
+            term="Active (green inner)"
+            action="Claude Code is live · click → stop (warning modal)"
+          />
+          <LegendRow
+            swatch={<Plug status="idle" size={20} />}
+            term="Inactive (neutral inner)"
+            action="Worktree exists, Claude off · click → start claude --remote-control"
+          />
+        </Stack>
+      </Panel>
+
+      <Panel>
+        <Group gap={8} align="center">
+          <Box c="dimmed" style={{ lineHeight: 0 }}>
+            <IndicatorSymbol kind="git" />
+          </Box>
+          <EmbossedLabel>Git status lamp</EmbossedLabel>
+        </Group>
+        <Stack gap="sm" mt="sm">
+          <LegendRow
+            swatch={<StatusLight tone="neutral" />}
+            term="Up to date (neutral)"
+            action="Local matches the remote"
+          />
+          <LegendRow
+            swatch={<StatusLight tone="yellow" />}
+            term="Behind (yellow)"
+            action="Remote has commits the worktree doesn’t"
+          />
+          <LegendRow
+            swatch={<StatusLight tone="green" />}
+            term="Ahead (green)"
+            action="Worktree has commits to push"
+          />
+          <LegendRow
+            swatch={<StatusLight tone="red" />}
+            term="Diverged (red)"
+            action="Local and remote have both moved on"
+          />
+          <Text fz="xs" c="dimmed">
+            Click → status / action modal (deferred).
+          </Text>
+        </Stack>
+      </Panel>
+
+      <Panel>
+        <Group gap={8} align="center">
+          <Box c="dimmed" style={{ lineHeight: 0 }}>
+            <IndicatorSymbol kind="pr" />
+          </Box>
+          <EmbossedLabel>PR status lamp</EmbossedLabel>
+        </Group>
+        <Stack gap="sm" mt="sm">
+          <LegendRow
+            swatch={<StatusLight tone="neutral" />}
+            term="No PR (neutral)"
+            action="No pull request open for the branch"
+          />
+          <LegendRow
+            swatch={<StatusLight tone="blue" />}
+            term="PR open (blue)"
+            action="A pull request exists"
+          />
+          <LegendRow
+            swatch={<StatusLight tone="green" />}
+            term="Ready to merge (green)"
+            action="Open, checks passing, mergeable"
+          />
+          <LegendRow
+            swatch={<StatusLight tone="red" />}
+            term="Checks failing (red)"
+            action="Open but CI is red (overrides conflicts)"
+          />
+          <LegendRow
+            swatch={<StatusLight tone="yellow" />}
+            term="Merge conflicts (yellow)"
+            action="Open with conflicts (red if checks also fail)"
+          />
+          <Text fz="xs" c="dimmed">
+            Click → status / action modal (deferred).
+          </Text>
+        </Stack>
+      </Panel>
+
+      <Panel>
+        <EmbossedLabel>Other actions</EmbossedLabel>
+        <Stack gap="xs" mt="sm">
+          <Text fz="sm">
+            <Text span fw={700}>
+              Add worktree…
+            </Text>{' '}
+            — empty row at the bottom of a card → create modal (pick base branch, default main;
+            Claude stays off).
+          </Text>
+          <Text fz="sm">
+            <Text span fw={700}>
+              Delete
+            </Text>{' '}
+            — trash button on the right of each row removes the worktree.
+          </Text>
+          <Text fz="sm">
+            <Text span fw={700}>
+              New repository / Settings
+            </Text>{' '}
+            — drawer buttons open the clone page and the settings page.
+          </Text>
+        </Stack>
+      </Panel>
+    </Stack>
+  );
+}
+
+function LegendBody() {
+  const dark = useComputedColorScheme('light') === 'dark';
+  return (
+    <Box p="md" style={{ background: flat(dark).body }}>
+      <SectionTitle mb="md">Worktree controls — what each click does</SectionTitle>
+      <Legend />
+    </Box>
+  );
+}
+
+/** Reference — the indicator + click-action legend, rendered on screen (not just in code comments). */
+export const LegendReference: Story = {
+  render: () => (
+    <Frame width={420}>
+      <LegendBody />
     </Frame>
   ),
 };

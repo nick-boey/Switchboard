@@ -10,7 +10,6 @@ import {
   type BoxProps,
 } from '@mantine/core';
 import type { CSSProperties, ReactNode } from 'react';
-import type { SwitchboardTokens } from '../../theme/theme';
 
 /**
  * Shared sketch kit for the `ui-prototypes-mvp` prototypes — the FLAT, abstract take on the '50s
@@ -31,22 +30,73 @@ import type { SwitchboardTokens } from '../../theme/theme';
 /** Very slightly rounded — the house panel radius for the flat language. */
 export const PANEL_RADIUS = 6;
 
-const DARK_SURFACE = '#2a241d';
-const DARK_WELL = '#211c16';
+/** Neutral hairline divider that reads on both light and dark surfaces. */
+export const FLAT_DIVIDER = 'rgba(128,128,128,0.25)';
+
+/**
+ * Flat neutral surface scheme — the bakelite/warm tones removed. Only surfaces, grounds, and borders
+ * go neutral; the functional accent colours (patina/brass/signal + the cobalt lamp) and the patina
+ * brand bar stay. Local to the prototypes (theme tokens are out of bounds for sketches).
+ */
+export interface FlatScheme {
+  /** Page background behind the device frame. */
+  ground: string;
+  /** App body inside the frame. */
+  body: string;
+  /** Raised card. */
+  surface: string;
+  /** Recessed well. */
+  well: string;
+  /** Card / frame outline. */
+  border: string;
+  /** Corner-screw outline circle. */
+  screw: string;
+  /** Drawer rail. */
+  rail: string;
+  /** Body text. */
+  text: string;
+  /** Subtle hover/selected wash. */
+  subtle: string;
+}
+
+export function flat(dark: boolean): FlatScheme {
+  return dark
+    ? {
+        ground: '#101010',
+        body: '#181818',
+        surface: '#212121',
+        well: '#1a1a1a',
+        border: 'rgba(255,255,255,0.14)',
+        screw: 'rgba(255,255,255,0.30)',
+        rail: '#151515',
+        text: '#e6e6e6',
+        subtle: 'rgba(255,255,255,0.06)',
+      }
+    : {
+        ground: '#ececeb',
+        body: '#f6f6f4',
+        surface: '#ffffff',
+        well: '#f2f2f0',
+        border: 'rgba(0,0,0,0.14)',
+        screw: 'rgba(0,0,0,0.26)',
+        rail: '#ececeb',
+        text: '#1f1f1f',
+        subtle: 'rgba(0,0,0,0.05)',
+      };
+}
 
 export type Corner = 'tl' | 'tr' | 'bl' | 'br';
 const ALL_CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br'];
 
 function Screws({ dark, corners }: { dark: boolean; corners: Corner[] }) {
-  const bg = dark ? '#15110c' : '#e7d9bd';
-  const br = dark ? 'rgba(255,255,255,0.20)' : 'rgba(60,45,20,0.38)';
+  const br = flat(dark).screw;
   const inset = 6;
   const base: CSSProperties = {
     position: 'absolute',
     width: 6,
     height: 6,
     borderRadius: '50%',
-    background: bg,
+    background: 'transparent',
     border: `1px solid ${br}`,
   };
   const pos: Record<Corner, CSSProperties> = {
@@ -76,8 +126,8 @@ export interface PanelProps extends BoxProps {
 }
 
 /**
- * The flat embossed-bakelite panel: a slightly rounded surface with a 1px outline and (for raised
- * cards) four corner screws. Scheme-adaptive — cream in light, charcoal in dark. Every screen
+ * The flat panel: a slightly rounded neutral surface with a 1px outline and (for raised cards) four
+ * corner-screw outline circles. Scheme-adaptive — white in light, charcoal in dark. Every screen
  * region is one of these.
  */
 export function Panel({
@@ -89,23 +139,11 @@ export function Panel({
   style,
   ...rest
 }: PanelProps) {
-  const theme = useMantineTheme();
   const dark = useComputedColorScheme('light') === 'dark';
+  const f = flat(dark);
   const showScrews = (screws ?? !pressed) && corners.length > 0;
-  const surface = pressed
-    ? dark
-      ? DARK_WELL
-      : 'rgba(60,45,20,0.05)'
-    : dark
-      ? DARK_SURFACE
-      : theme.colors.bakelite[0];
-  const border = pressed
-    ? dark
-      ? 'rgba(0,0,0,0.45)'
-      : 'rgba(60,45,20,0.14)'
-    : dark
-      ? 'rgba(255,255,255,0.13)'
-      : 'rgba(60,45,20,0.22)';
+  const surface = pressed ? f.well : f.surface;
+  const border = pressed ? FLAT_DIVIDER : f.border;
   return (
     <Box
       p={p}
@@ -114,8 +152,8 @@ export function Panel({
         background: surface,
         border: `1px solid ${border}`,
         borderRadius: PANEL_RADIUS,
-        color: dark ? theme.colors.bakelite[1] : theme.black,
-        boxShadow: pressed ? 'inset 0 1px 2px rgba(0,0,0,0.10)' : 'none',
+        color: f.text,
+        boxShadow: 'none',
         ...style,
       }}
       {...rest}
@@ -143,12 +181,12 @@ export function Plug({
 }) {
   const theme = useMantineTheme();
   const dark = useComputedColorScheme('light') === 'dark';
-  const ring = dark ? 'rgba(255,255,255,0.5)' : 'rgba(60,45,20,0.55)';
+  const ring = dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
   const inner: Record<PlugStatus, string> = {
     running: theme.colors.patina[6],
     working: theme.colors.brass[6],
     error: theme.colors.signal[6],
-    idle: dark ? theme.colors.bakelite[7] : theme.colors.bakelite[4],
+    idle: dark ? '#5c5c5c' : '#c4c4c4',
     off: 'transparent',
   };
   return (
@@ -224,18 +262,13 @@ export function IndicatorLamp({
  * `SectionTitle` (plain text) instead.
  */
 export function EmbossedLabel({ children, ...rest }: { children: ReactNode } & BoxProps) {
-  const theme = useMantineTheme();
   const dark = useComputedColorScheme('light') === 'dark';
   return (
     <Box
-      px={8}
-      py={2}
+      component="span"
       style={{
         display: 'inline-block',
-        background: dark ? 'rgba(0,0,0,0.22)' : 'rgba(60,45,20,0.06)',
-        border: `1px solid ${dark ? 'rgba(0,0,0,0.30)' : 'rgba(60,45,20,0.12)'}`,
-        borderRadius: 4,
-        color: dark ? theme.colors.brass[4] : theme.colors.brass[8],
+        color: dark ? '#cfcfcf' : '#525252',
         textTransform: 'uppercase',
         letterSpacing: '0.14em',
         fontSize: '0.66rem',
@@ -272,26 +305,35 @@ export function DeviceFrame({
   label?: string;
   children: ReactNode;
 }) {
-  const theme = useMantineTheme();
+  const dark = useComputedColorScheme('light') === 'dark';
+  const f = flat(dark);
   return (
     <Box
-      style={{
-        width,
-        maxWidth: '100%',
-        borderRadius: PANEL_RADIUS + 2,
-        overflow: 'hidden',
-        background: 'var(--mantine-color-body)',
-        boxShadow: '0 6px 18px rgba(20,15,5,0.22)',
-        border: `1px solid ${theme.colors.brass[7]}`,
-      }}
+      style={
+        {
+          width,
+          maxWidth: '100%',
+          borderRadius: PANEL_RADIUS + 2,
+          overflow: 'hidden',
+          background: f.body,
+          boxShadow: dark ? '0 6px 20px rgba(0,0,0,0.55)' : '0 6px 20px rgba(0,0,0,0.14)',
+          border: `1px solid ${f.border}`,
+          // Neutralise Mantine input/default surfaces (theme `white` is the cream we're removing).
+          '--mantine-color-white': '#ffffff',
+          '--mantine-color-default': f.surface,
+          '--mantine-color-default-hover': f.well,
+          '--mantine-color-default-border': f.border,
+          '--mantine-color-body': f.body,
+        } as CSSProperties
+      }
     >
       {label && (
         <Box
           px="sm"
           py={6}
           style={{
-            background: theme.colors.patina[8],
-            color: theme.colors.bakelite[0],
+            background: dark ? '#2a2a2a' : '#e4e4e4',
+            color: dark ? '#e6e6e6' : '#333333',
             textTransform: 'uppercase',
             letterSpacing: '0.16em',
             fontSize: '0.62rem',
@@ -323,6 +365,8 @@ export function AppFrame({
   children: ReactNode;
 }) {
   const theme = useMantineTheme();
+  const dark = useComputedColorScheme('light') === 'dark';
+  const f = flat(dark);
   return (
     <Box style={{ display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <Group
@@ -332,7 +376,7 @@ export function AppFrame({
         py="sm"
         style={{
           background: theme.colors.patina[8],
-          color: theme.colors.bakelite[0],
+          color: '#f4f4f4',
           flex: 'none',
         }}
       >
@@ -348,7 +392,7 @@ export function AppFrame({
         </Group>
         {status}
       </Group>
-      <Box style={{ flex: 1, minHeight: 460, background: 'var(--mantine-color-body)' }} p="md">
+      <Box style={{ flex: 1, minHeight: 460, background: f.body }} p="md">
         {children}
       </Box>
       {toast && (
@@ -453,7 +497,7 @@ export function OperationLedger({ ops, locked = false }: { ops: Operation[]; loc
                 key={op.id}
                 py={8}
                 px={6}
-                style={{ borderTop: i === 0 ? undefined : '1px solid rgba(120,90,40,0.18)' }}
+                style={{ borderTop: i === 0 ? undefined : `1px solid ${FLAT_DIVIDER}` }}
               >
                 <Group gap="sm" wrap="nowrap" align="flex-start">
                   <Box mt={3}>
@@ -506,5 +550,110 @@ export function OperationLedger({ ops, locked = false }: { ops: Operation[]; loc
         </Stack>
       </Panel>
     </Panel>
+  );
+}
+
+// --- Hub indicator primitives ----------------------------------------------
+// Added for the worktrees-hub redesign. The hub needs a richer status lamp than `IndicatorLamp`
+// (five tones incl. a blue with no equivalent in `theme.ts`) and small symbol glyphs that caption
+// what each indicator column means. Kept here as flat-language primitives; the composed hub
+// components (cards, rows, drawer, modals) live in `hub.tsx`.
+
+/** The five indicator-light tones. `blue` is local to the prototypes — there is no blue in theme.ts. */
+export type LightTone = 'neutral' | 'yellow' | 'green' | 'red' | 'blue';
+
+/** Cobalt for the PR-exists lamp. Local constant (touching theme tokens is out of bounds for sketches). */
+const COBALT = { light: '#2f6aa8', dark: '#6ba6e0' };
+
+/**
+ * A flat indicator light — a bezel-ringed lamp whose bulb is coloured by `tone` and glows softly when
+ * lit. The hub's git-status and PR-status indicators. `neutral` reads as an unlit/empty socket
+ * (git "up to date" / "no PR"). `label` makes it an accessible status image when used on its own.
+ */
+export function StatusLight({
+  tone = 'neutral',
+  size = 14,
+  label,
+}: {
+  tone?: LightTone;
+  size?: number;
+  label?: string;
+}) {
+  const theme = useMantineTheme();
+  const dark = useComputedColorScheme('light') === 'dark';
+  const hue: Record<Exclude<LightTone, 'neutral'>, string> = {
+    yellow: theme.colors.brass[dark ? 4 : 6],
+    green: theme.colors.patina[dark ? 4 : 6],
+    red: theme.colors.signal[dark ? 4 : 6],
+    blue: dark ? COBALT.dark : COBALT.light,
+  };
+  const off = tone === 'neutral';
+  const bezel = dark ? 'rgba(255,255,255,0.32)' : 'rgba(0,0,0,0.42)';
+  const fill = off ? (dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.09)') : hue[tone];
+  return (
+    <span
+      role={label ? 'img' : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        border: `1.5px solid ${bezel}`,
+        background: fill,
+        boxShadow: off ? 'none' : `0 0 ${Math.round(size * 0.5)}px ${fill}`,
+        display: 'inline-block',
+        flex: 'none',
+      }}
+    />
+  );
+}
+
+export type IndicatorKind = 'plug' | 'git' | 'pr';
+
+/**
+ * A small monochrome glyph captioning what an indicator column means — the "symbols above the lights"
+ * the brief calls for. Renders in `currentColor`, so the parent sets the tone. `plug` is a power
+ * symbol (Claude on/off), `git` a branch, `pr` a branch merging back.
+ */
+export function IndicatorSymbol({ kind, size = 14 }: { kind: IndicatorKind; size?: number }) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: '0 0 16 16',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.4,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+  if (kind === 'plug') {
+    return (
+      <svg {...common}>
+        <path d="M8 2.4 V7" />
+        <path d="M4.6 4.8 a4.6 4.6 0 1 0 6.8 0" />
+      </svg>
+    );
+  }
+  if (kind === 'git') {
+    return (
+      <svg {...common}>
+        <circle cx="4.5" cy="3.5" r="1.5" />
+        <circle cx="4.5" cy="12.5" r="1.5" />
+        <circle cx="11.5" cy="6" r="1.5" />
+        <path d="M4.5 5 V11" />
+        <path d="M11.5 7.5 C 11.5 10, 8 9.4, 5.6 11.1" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <circle cx="4.5" cy="3.5" r="1.5" />
+      <circle cx="4.5" cy="12.5" r="1.5" />
+      <circle cx="11.5" cy="12.5" r="1.5" />
+      <path d="M4.5 5 V11" />
+      <path d="M6 4.4 H8.6 a3 3 0 0 1 3 3 V11" />
+    </svg>
   );
 }
