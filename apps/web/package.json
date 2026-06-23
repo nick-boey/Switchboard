@@ -12,6 +12,7 @@
     "storybook:build": "storybook build",
     "storybook:prototypes": "storybook dev -p 6007 --no-open -c .storybook-prototypes",
     "storybook:prototypes:build": "storybook build -c .storybook-prototypes",
+    "test-storybook": "test-storybook",
     "clean": "rm -rf dist dist-types storybook-static *.tsbuildinfo"
   },
   "dependencies": {
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@storybook/react-vite": "10.4.6",
+    "@storybook/test-runner": "0.24.4",
     "@switchboard/server": "workspace:*",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
