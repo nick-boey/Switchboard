@@ -21,7 +21,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 2. Shared contracts & canonical ID scheme (packages/shared)
 
-- [ ] 2.1 Write the failing tests for the **canonical path-safe ID scheme** (`idForBranch`,
+- [x] 2.1 Write the failing tests for the **canonical path-safe ID scheme** (`idForBranch`,
       `isValidWorktreeId`): table-driven over adversarial branch names (`/`, `../x`/`..`/`.`,
       `.git`, spaces, Unicode/emoji, reserved/empty slug, excessive length) and **case-folding
       pairs** (`Feature/X` vs `feature/x`) — every output is path-safe and passes
@@ -30,12 +30,12 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
       assert distinct hashes, not an impossibility claim); the slug round-trips the recognisable
       head. (Create-time collision detect-and-reject is exercised in group 3, since it consults the
       on-disk worktree set.)
-- [ ] 2.2 Write the failing schema tests: the worktree-create request (valid `<repo-id>` + branch +
+- [x] 2.2 Write the failing schema tests: the worktree-create request (valid `<repo-id>` + branch +
       mode `existing-remote`|`new` + optional base; rejects unsafe/empty branch and malformed
       `<repo-id>`), the worktree-summary + list response (`<wt-id>`, exact branch, path, git-status
       `dirty` + `sync ∈ up-to-date|ahead|behind|diverged`, optional `prMerged`), and the
       worktree-delete request (`<repo-id>` + `<wt-id>` + optional `force`).
-- [ ] 2.3 Implement the ID-scheme function + validator and the Zod schemas in `packages/shared`
+- [x] 2.3 Implement the ID-scheme function + validator and the Zod schemas in `packages/shared`
       (reusing the conservative charset family from `repos.ts`) to green; export them from the
       package index for the server and the (future) `claude-session-launch` tmux naming.
 

@@ -52,6 +52,31 @@ export type {
   RepoListResponse,
 } from './repos.js';
 
+// Worktree-management slice contracts + the canonical path-safe ID scheme (design Decisions
+// 1, 5, 6, 8). The ID scheme is browser-safe (vendored sync SHA-256, no `node:*`) so it lives in
+// this barrel and `claude-session-launch` reuses it for tmux session names.
+export {
+  idForBranch,
+  isValidWorktreeId,
+  slugForBranch,
+  isSafeBranchName,
+  sha256Hex,
+  worktreeModeSchema,
+  worktreeCreateRequestSchema,
+  worktreeSyncSchema,
+  worktreeSummarySchema,
+  worktreeListResponseSchema,
+  worktreeDeleteRequestSchema,
+} from './worktrees.js';
+export type {
+  WorktreeMode,
+  WorktreeCreateRequest,
+  WorktreeSync,
+  WorktreeSummary,
+  WorktreeListResponse,
+  WorktreeDeleteRequest,
+} from './worktrees.js';
+
 // Typed API client factory (design Decision 4). Generic over the server's `AppType` to keep
 // `packages/shared` free of a project-reference cycle back to `apps/server`.
 export { createApiClient } from './client.js';
