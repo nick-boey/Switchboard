@@ -156,6 +156,6 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 11. Verify
 
-- [ ] 11.1 Run `just lint`, `just typecheck`, `just test`, and `just e2e` (after `just build`);
+- [x] 11.1 Run `just lint`, `just typecheck`, `just test`, and `just e2e` (after `just build`);
       confirm all new unit/UI/E2E tests pass, the no-leak tests prove the PAT never appears in
       args/URL/the bare `.bare/config`/telemetry, and the LikeC4 overlay validates.
