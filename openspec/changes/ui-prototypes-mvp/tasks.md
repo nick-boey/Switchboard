@@ -40,7 +40,7 @@ resolved at archive (the `switch-openspec-archive` workflow), not here.
       keep the palettes/type, add the cobalt/violet indicator status tokens (graduating the
       prototype's local `COBALT`/`VIOLET` constants into the theme), expose scheme-aware tokens
       (per 1.3); update `theme.stories.tsx`. → flat `SwitchboardTokens` + `switchboardCssVariables
-    Resolver` (`--sb-*`), wired into `AppProviders`; embossed tokens removed; `EmbossedPanel`/
+Resolver` (`--sb-*`), wired into `AppProviders`; embossed tokens removed; `EmbossedPanel`/
       `JackButton` bridged to flat (superseded fully in groups 3/6); flat-token gallery story.
 
 ## 3. Flat surface primitives (raised card + pressed well)
@@ -57,38 +57,38 @@ resolved at archive (the `switch-openspec-archive` workflow), not here.
 
 ## 4. Session plug
 
-- [ ] 4.1 Write the failing render test: the plug renders all five session states
+- [x] 4.1 Write the failing render test: the plug renders all five session states
       (`running` / `working` / `error` / `idle` / `off`) as distinguishable, with `error`
       drawing from the Signal ramp.
-- [ ] 4.2 Port `kit.tsx` `Plug` → a production session-plug primitive with stories (`StatusLight`
+- [x] 4.2 Port `kit.tsx` `Plug` → a production session-plug primitive with stories (`StatusLight`
       is the lamp bulb, ported with the lamps in 5.2 — it is not part of the plug).
-- [ ] 4.3 Write the failing test: the plug is actionable — activating an `off` plug fires a
+- [x] 4.3 Write the failing test: the plug is actionable — activating an `off` plug fires a
       launch request and activating a live (non-`off`) plug fires a stop request; a `working`
       plug guards/disables activation; the accessible label exposes the current state and the
       available action.
-- [ ] 4.4 Implement the plug's action affordance + accessibility on the production primitive (an
+- [x] 4.4 Implement the plug's action affordance + accessibility on the production primitive (an
       activate callback + state/action labelling); the concrete launch/stop wiring (session API,
       Stop-session confirmation) is deferred to `claude-session-launch`.
 
 ## 5. Status indicator lamps (display-only)
 
-- [ ] 5.1 Write the failing render test: the git lamp renders `up-to-date` / `behind` /
+- [x] 5.1 Write the failing render test: the git lamp renders `up-to-date` / `behind` /
       `ahead` / `diverged` and the PR lamp renders `none` / `open` / `ready` / `checks-failing`
       / `conflicts` / `conflicts-failing` / `merged`, each labelled to its column; activating a
       lamp triggers no action (inert in the MVP).
-- [ ] 5.2 Port `kit.tsx` `StatusLight` (the shared lamp bulb) + `IndicatorLight` +
+- [x] 5.2 Port `kit.tsx` `StatusLight` (the shared lamp bulb) + `IndicatorLight` +
       `IndicatorSymbol` → production lamp primitives with stories, drawing PR `open`/`merged` from
       the cobalt/violet theme tokens (no ad-hoc hex); display-only, no action handler.
 
 ## 6. Action & form controls
 
-- [ ] 6.1 Write the failing render test: four button intents (`primary` / `secondary` /
+- [x] 6.1 Write the failing render test: four button intents (`primary` / `secondary` /
       `destructive` / `subtle`) are distinct (destructive uses Signal); a segmented toggle can
       mark an option disabled (e.g. "Local") so it is unselectable; the fixed-list selector,
       autocomplete selector, text input, and icon button each render resting + disabled states;
       the autocomplete selector and text input additionally render an **invalid (error)** state
       (validity affordance + error message) for a value they reject.
-- [ ] 6.2 Port `kit.tsx` buttons / `IconButton` / `SegmentedToggle` / selectors / input →
+- [x] 6.2 Port `kit.tsx` buttons / `IconButton` / `SegmentedToggle` / selectors / input →
       production control primitives with stories, including the autocomplete/text-input invalid
       (error) state; the (delete) icon button ports resting + disabled only — its `lit`
       (armed / safe-to-delete) state is deferred with deletion behaviour to `worktree-management`.
@@ -97,10 +97,10 @@ resolved at archive (the `switch-openspec-archive` workflow), not here.
 
 ## 7. Typography & labels
 
-- [ ] 7.1 Write the failing test: machine identifiers (branch names, commit hashes, commands,
+- [x] 7.1 Write the failing test: machine identifiers (branch names, commit hashes, commands,
       paths) render in the monospace family; section/field labels use the uppercase, tracked
       micro-label style; headings/body follow the geometric ramp.
-- [ ] 7.2 Port `kit.tsx` `EmbossedLabel` (→ flat tracked label) + `SectionTitle` and wire the
+- [x] 7.2 Port `kit.tsx` `EmbossedLabel` (→ flat tracked label) + `SectionTitle` and wire the
       type ramp into the theme/components with stories.
 
 ## 8. Production colour scheme, app shell re-treatment, responsive conventions & quarantine

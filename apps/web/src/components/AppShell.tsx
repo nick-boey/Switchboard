@@ -12,8 +12,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import type { SwitchboardTokens } from '../theme/theme';
+import { Plug } from '../ui/plug';
 import { Card } from '../ui/surface';
-import { JackButton } from './JackButton';
 
 export interface AppShellProps {
   /** Inject a typed client (Storybook / tests). The app builds one from runtime config. */
@@ -58,7 +58,7 @@ export function AppShell({ client: injectedClient }: AppShellProps) {
             size="sm"
             aria-label="Toggle navigation"
           />
-          <JackButton label="Operator line" active data-testid="brand-jack" />
+          <Plug status="running" size={18} label="Operator line" data-testid="brand-mark" />
           <Title
             order={1}
             fz="h3"
