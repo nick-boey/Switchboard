@@ -10,18 +10,18 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 1. Test infrastructure
 
-- [ ] 1.1 Build a deterministic **fake GitHub REST layer** (paginated repo/org lists via a
+- [x] 1.1 Build a deterministic **fake GitHub REST layer** (paginated repo/org lists via a
       synthetic `Link` header; `401`, `403` rate-limit with reset, and `404` responses) usable
       from both Vitest and the Playwright run, with a smoke test proving pagination and each
       error shape.
-- [ ] 1.2 Build the **no-leak assertion harness**: helpers that spawn git and scan the process
+- [x] 1.2 Build the **no-leak assertion harness**: helpers that spawn git and scan the process
       arguments, the cloned repository tree and its bare config at `.bare/config` (the bare clone
       has no `.git/config`), and captured telemetry/logs for a secret (reusing the `foundations`
       redaction/telemetry-capture path), with a smoke test.
-- [ ] 1.3 Build the **credential-helper test rig**: exercise the helper's credential-protocol
+- [x] 1.3 Build the **credential-helper test rig**: exercise the helper's credential-protocol
       I/O against a `600`-mode token file in a temp `~/.switchboard` workspace, with a smoke
       test.
-- [ ] 1.4 Build the **operation test scaffolding**: a temp `~/.switchboard` workspace fixture
+- [x] 1.4 Build the **operation test scaffolding**: a temp `~/.switchboard` workspace fixture
       (via `RuntimeContext`) plus controllable process/clock seams enabling concurrency,
       mid-flight-kill, and restart/reconcile simulation, with a smoke test.
 
