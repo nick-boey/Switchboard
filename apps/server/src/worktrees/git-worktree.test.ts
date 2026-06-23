@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { idForBranch } from '@switchboard/shared';
@@ -9,6 +9,7 @@ import {
   worktreesDir,
   type WorktreeFixture,
 } from '../testing/worktree-fixture.js';
+import { createGitRunner, type GitRunner } from '../repos/git-runner.js';
 import { classifySync, createWorktreeService, type WorktreeService } from './git-worktree.js';
 import { WorktreeCollisionError, WorktreeError } from './errors.js';
 
@@ -188,6 +189,78 @@ describe('worktree Git service', () => {
     // git no longer lists the removed worktree.
     const list = await service.listWorktrees(fx.target);
     expect(list.some((w) => w.wtId === drop.wtId)).toBe(false);
+  });
+
+  it('refuses to create over a pre-existing UNOWNED directory and never deletes it on cleanup', async () => {
+    // Data-loss regression: a pre-existing NORMAL directory (a user's data, or a stray dir) sits
+    // at worktrees/<idForBranch(branch)>. It is NOT a git worktree and was NOT created by this op.
+    const branch = 'feature/pre-existing';
+    const wtId = idForBranch(branch);
+    const path = join(worktreesDir(fx.ctx, fx.target), wtId);
+    mkdirSync(path, { recursive: true });
+    const sentinel = join(path, 'precious.txt');
+    writeFileSync(sentinel, 'do-not-delete');
+
+    // The create must FAIL because the destination already exists and is not ours — and it must
+    // NOT claim ownership of (mark) that path.
+    await expect(
+      service.createWorktree({ target: fx.target, branch, mode: 'new' }),
+    ).rejects.toBeInstanceOf(WorktreeError);
+
+    // Drive the exact failure-cleanup path the ledger runs on a failed/aborted op.
+    await service.removeWorktreeIfIncomplete(fx.target, wtId);
+
+    // The pre-existing directory AND its sentinel survive: cleanup must NEVER delete a path this
+    // operation did not create. (No ownership proof → leave it untouched.)
+    expect(existsSync(path)).toBe(true);
+    expect(existsSync(sentinel)).toBe(true);
+    expect(readFileSync(sentinel, 'utf8')).toBe('do-not-delete');
+  });
+
+  it('still cleans up a partial worktree THIS operation created (ownership marker present)', async () => {
+    // A genuine partial owned by this op: wrap the real runner so `git worktree add` simulates git
+    // creating the destination then failing mid-checkout. createWorktree writes its ownership
+    // marker BEFORE the mutation, so the leftover is provably ours.
+    const branch = 'feature/owned-partial';
+    const wtId = idForBranch(branch);
+    const path = join(worktreesDir(fx.ctx, fx.target), wtId);
+    const real = createGitRunner();
+    const runner: GitRunner = {
+      run: (a, o) => real.run(a, o),
+      capture: (a, o) => {
+        if (a.includes('worktree') && a.includes('add')) {
+          mkdirSync(path, { recursive: true });
+          writeFileSync(join(path, '.partial'), 'half-written');
+          return Promise.resolve({ code: 1, stdout: '' });
+        }
+        return real.capture(a, o);
+      },
+    };
+    const svc = createWorktreeService(fx.ctx, { gitService: fx.gitService, runner });
+
+    await expect(
+      svc.createWorktree({ target: fx.target, branch, mode: 'new' }),
+    ).rejects.toBeInstanceOf(WorktreeError);
+    // The failed op left an on-disk partial AND its ownership/pending marker.
+    expect(existsSync(path)).toBe(true);
+    expect(existsSync(`${path}.pending`)).toBe(true);
+
+    // Cleanup removes the owned partial and clears the marker (legitimate cleanup is intact).
+    await svc.removeWorktreeIfIncomplete(fx.target, wtId);
+    expect(existsSync(path)).toBe(false);
+    expect(existsSync(`${path}.pending`)).toBe(false);
+  });
+
+  it('releases the ownership marker after a successful create (no lingering claim)', async () => {
+    const { wtId } = await service.createWorktree({
+      target: fx.target,
+      branch: 'feature/clean-marker',
+      mode: 'new',
+    });
+    const path = join(worktreesDir(fx.ctx, fx.target), wtId);
+    expect(existsSync(path)).toBe(true);
+    // No lingering ownership claim — a future user-placed directory here is never mistaken for ours.
+    expect(existsSync(`${path}.pending`)).toBe(false);
   });
 });
 

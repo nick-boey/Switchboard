@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import {
   idForBranch as defaultIdForBranch,
@@ -119,6 +119,12 @@ export function createWorktreeService(
     if (!isValidWorktreeId(wtId)) throw new WorktreeError('git-failure', 'invalid worktree id');
     return join(worktreesRoot(t), wtId);
   };
+  // Ownership marker: a sibling file written just before THIS operation mutates the destination,
+  // and removed only on success. Its presence is proof that the directory at `worktreePath` was
+  // created by an in-flight/failed create of ours — the ONLY paths failure-cleanup may delete.
+  // A path that exists without this marker is pre-existing user data and is never touched.
+  const pendingMarkerPath = (t: RepoTarget, wtId: string): string =>
+    `${worktreePath(t, wtId)}.pending`;
 
   const git = async (args: string[], options: WorktreeRunOptions = {}): Promise<string> => {
     const result = await runner.capture(args, options);
@@ -199,7 +205,19 @@ export function createWorktreeService(
       }
 
       const path = worktreePath(target, wtId);
+      const marker = pendingMarkerPath(target, wtId);
       mkdirSync(dirname(path), { recursive: true });
+
+      // 5. Destination-safety preflight (data-loss guard). The collision check above only sees
+      // git-registered worktrees; a NORMAL directory already at `path` is the user's data (a stray
+      // dir, or a prior partial attempt this op did not claim). Refuse with a typed error and do
+      // NOT write the ownership marker, so the failure-cleanup path will never delete it.
+      if (existsSync(path) && !existsSync(marker)) {
+        throw new WorktreeError('dest-exists', 'worktree destination already exists');
+      }
+      // Claim ownership of `path` BEFORE any filesystem mutation, so a partial left by a crash/abort
+      // is provably ours and can be cleaned. Released on success (below); kept on failure for cleanup.
+      writeFileSync(marker, '');
 
       // Telemetry (Decision 7): sensitive values go under blocklisted keys so the redactor masks
       // them; the branch, `<wt-id>`/slug, and absolute path are never plain attributes.
@@ -242,6 +260,9 @@ export function createWorktreeService(
         }
       }
 
+      // Success: release the ownership claim. A completed worktree is recognised by git, so cleanup
+      // never touches it — and a lingering marker must not let a future user dir be mistaken as ours.
+      rmSync(marker, { force: true });
       return { wtId };
     },
 
@@ -314,7 +335,14 @@ export function createWorktreeService(
 
     async removeWorktreeIfIncomplete(target, wtId) {
       if (await service.isWorktreeComplete(target, wtId)) return;
+      const path = worktreePath(target, wtId);
+      const marker = pendingMarkerPath(target, wtId);
+      // Ownership proof. A directory that exists on disk but carries no ownership marker was NOT
+      // created by this operation (git also does not report it — `isWorktreeComplete` is false), so
+      // it is pre-existing user data. NEVER delete it. Only marked/owned (or absent) paths proceed.
+      if (existsSync(path) && !existsSync(marker)) return;
       await service.removeWorktree(target, wtId);
+      rmSync(marker, { force: true });
     },
   };
 

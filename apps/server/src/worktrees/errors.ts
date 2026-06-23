@@ -10,6 +10,7 @@ export type WorktreeErrorKind =
   | 'no-clone'
   | 'branch-exists'
   | 'branch-not-found'
+  | 'dest-exists'
   | 'not-safe'
   | 'git-failure';
 

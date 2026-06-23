@@ -111,6 +111,17 @@ the idempotent path, not a collision.
 - **THEN** each lands at its own distinct `<wt-id>` directory and neither aliases the other,
   because the identifier's hash suffix is computed over the exact raw branch bytes
 
+#### Scenario: A pre-existing directory at the destination is refused and never deleted by cleanup
+
+- **WHEN** a worktree create targets a `<wt-id>` path that already exists on disk as a normal
+  directory that git does not report as a worktree and that this operation did not create (e.g. a
+  user's data or a directory left by an earlier attempt the operation did not claim)
+- **THEN** the create fails with a typed error without claiming ownership of that path, and the
+  failure-cleanup path leaves the pre-existing directory and its contents intact — cleanup MUST
+  only remove a destination this operation provably created (claimed via an ownership marker before
+  any filesystem mutation), so it never deletes a path it did not create, while a genuine partial
+  worktree this operation did create is still removed and a completed worktree is never removed
+
 ### Requirement: Worktree creation runs as a tracked, serialized, recoverable operation
 
 The system SHALL run worktree creation through the shared filesystem operation ledger as a
