@@ -1,7 +1,26 @@
-import { MantineProvider, type MantineColorScheme } from '@mantine/core';
+import {
+  MantineProvider,
+  type MantineColorScheme,
+  type MantineColorSchemeManager,
+} from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { switchboardCssVariablesResolver, switchboardTheme } from '../theme/theme';
+
+/**
+ * A non-persistent colour-scheme manager so the OS `prefers-color-scheme` is the **sole** driver
+ * (ui-design-language: "no in-app light/dark toggle"). Mantine's default manager is localStorage-
+ * backed and reads `mantine-color-scheme-value` ahead of `defaultColorScheme`, so a stale stored
+ * value could override the OS preference. This manager never reads or writes that key — `get`
+ * always returns the provided default, and `set`/`clear` are no-ops — keeping the OS authoritative.
+ */
+export const osColorSchemeManager: MantineColorSchemeManager = {
+  get: (defaultValue) => defaultValue,
+  set: () => {},
+  subscribe: () => {},
+  unsubscribe: () => {},
+  clear: () => {},
+};
 
 export interface AppProvidersProps {
   children: ReactNode;
@@ -31,6 +50,7 @@ export function AppProviders({ children, queryClient, colorScheme = 'auto' }: Ap
     <MantineProvider
       theme={switchboardTheme}
       defaultColorScheme={colorScheme}
+      colorSchemeManager={osColorSchemeManager}
       cssVariablesResolver={switchboardCssVariablesResolver}
     >
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
