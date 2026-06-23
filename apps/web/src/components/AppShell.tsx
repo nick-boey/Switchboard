@@ -14,6 +14,7 @@ import { useMemo, useState } from 'react';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import type { SwitchboardTokens } from '../theme/theme';
 import { ReposFlow } from '../repos/ReposFlow';
+import { WorktreesHub } from '../worktrees/WorktreesHub';
 import { Plug } from '../ui/plug';
 import { Card } from '../ui/surface';
 import { SectionTitle } from '../ui/typography';
@@ -41,7 +42,7 @@ export interface AppShellProps {
  */
 export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellProps) {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(false);
-  const [view, setView] = useState<'home' | 'new-repo'>('home');
+  const [view, setView] = useState<'home' | 'new-repo' | 'worktrees'>('home');
   const theme = useMantineTheme();
   const tokens = theme.other as SwitchboardTokens;
 
@@ -100,6 +101,13 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
         <Stack gap="xs">
           <SectionTitle>Lines</SectionTitle>
           <UnstyledButton
+            data-testid="nav-worktrees"
+            onClick={() => setView('worktrees')}
+            style={{ fontSize: 'var(--mantine-font-size-sm)', fontWeight: 600 }}
+          >
+            Worktrees
+          </UnstyledButton>
+          <UnstyledButton
             data-testid="nav-new-repository"
             onClick={() => setView('new-repo')}
             style={{ fontSize: 'var(--mantine-font-size-sm)', fontWeight: 600 }}
@@ -110,7 +118,9 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
-        {view === 'new-repo' ? (
+        {view === 'worktrees' ? (
+          <WorktreesHub client={client} />
+        ) : view === 'new-repo' ? (
           <ReposFlow client={client} />
         ) : (
           <Stack gap="md">

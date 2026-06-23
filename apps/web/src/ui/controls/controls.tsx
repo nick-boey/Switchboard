@@ -60,17 +60,23 @@ export interface IconButtonProps {
   color?: AccentColor;
   size?: number;
   disabled?: boolean;
+  /**
+   * Armed / lit state (worktree-management): fills the button with its full accent and a soft glow
+   * — the "safe to act" affordance (e.g. a worktree safe to delete). Resting otherwise.
+   */
+  lit?: boolean;
   onClick?: () => void;
   'data-testid'?: string;
 }
 
-/** A slightly-rounded square icon button — a soft wash of its accent. Resting + disabled only. */
+/** A slightly-rounded square icon button — a soft wash of its accent, or a lit/armed fill. */
 export function IconButton({
   icon,
   label,
   color = 'neutral',
   size = 30,
   disabled = false,
+  lit = false,
   onClick,
   'data-testid': testId,
 }: IconButtonProps) {
@@ -79,7 +85,11 @@ export function IconButton({
   const rgb = color === 'neutral' ? (dark ? '230,230,230' : '40,40,40') : ACCENT_RGB[color];
   const ramp = color === 'neutral' ? null : theme.colors[color];
   const soft = (a: number) => `rgba(${rgb},${a})`;
-  const iconColor = ramp?.[dark ? 4 : 7] ?? (dark ? '#d8d8d8' : '#3a3a3a');
+  const restingIcon = ramp?.[dark ? 4 : 7] ?? (dark ? '#d8d8d8' : '#3a3a3a');
+  // Lit: full-accent fill + glow with a light icon; resting: a soft recessed wash.
+  const background = lit ? `rgb(${rgb})` : soft(dark ? 0.22 : 0.12);
+  const border = lit ? `1px solid rgb(${rgb})` : `1px solid ${soft(dark ? 0.5 : 0.38)}`;
+  const iconColor = lit ? '#fff' : restingIcon;
   return (
     <Box
       component="button"
@@ -87,6 +97,7 @@ export function IconButton({
       aria-label={label}
       disabled={disabled}
       data-testid={testId}
+      data-lit={lit ? 'true' : 'false'}
       onClick={disabled ? undefined : onClick}
       style={{
         width: size,
@@ -97,10 +108,11 @@ export function IconButton({
         justifyContent: 'center',
         borderRadius: 7,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        background: soft(dark ? 0.22 : 0.12),
-        border: `1px solid ${soft(dark ? 0.5 : 0.38)}`,
+        background,
+        border,
         color: iconColor,
         opacity: disabled ? 0.4 : 1,
+        boxShadow: lit ? `0 0 8px ${soft(0.6)}` : undefined,
       }}
     >
       {icon}

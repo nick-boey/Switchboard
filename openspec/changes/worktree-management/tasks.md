@@ -108,7 +108,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 7. Web UI — worktrees-hub worktree slice (apps/web)
 
-- [ ] 7.1 Write the failing UI tests (TanStack Query + `src/ui/*` primitives, **ported** from the
+- [x] 7.1 Write the failing UI tests (TanStack Query + `src/ui/*` primitives, **ported** from the
       `worktrees` prototype, not imported): the worktree **list** (with git lamp), **empty**
       ("Add worktree…" only), **loading**, and **error** states; the **create-worktree modal**
       (existing-branch vs new-branch + base selector; Create enabled only for valid input); and the
@@ -116,7 +116,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
       remove, refused-with-reason when not) — including the **dormant-in-MVP** assertion: with no
       PR-status source, **no worktree reaches the lit styling** and the control **always confirms**
       before removing. Mobile + desktop, both colour schemes.
-- [ ] 7.2 Implement the worktrees-hub worktree slice to green (create → tracked op → list refresh;
+- [x] 7.2 Implement the worktrees-hub worktree slice to green (create → tracked op → list refresh;
       delete → guarded removal → list refresh), with the plug rendered display-only (its on/off
       action is `claude-session-launch`) and the PR lamp display-only (no data source here).
 
