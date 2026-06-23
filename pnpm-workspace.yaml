@@ -5,6 +5,8 @@ packages:
 
 # Approve postinstall build scripts (pnpm 11 moved this here from package.json).
 allowBuilds:
+  '@swc/core': true
   esbuild: true
   protobufjs: true
   sharp: true
+  unrs-resolver: true

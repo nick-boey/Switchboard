@@ -94,16 +94,31 @@ specs merged first) — see the `switch-openspec-archive` skill.
 
 ## Codex review checkpoints
 
-Hand the work to **Codex (`gpt-5.5`)** for an independent review at three transition
+Hand the work to **Codex** for an independent adversarial review at three transition
 points. The router is re-entered between stages, so each checkpoint fires here — before
 delegating onward — and is a **read-only second opinion**: Codex reviews, it never edits.
 
-**Run a checkpoint** by dispatching the `codex:codex-rescue` subagent (the `Agent` tool
-with `subagent_type: "codex:codex-rescue"`) in the foreground. Give it a prompt that
-(a) states up front that this is a **read-only review — do not modify any files**, (b)
-names the artifacts or diff to review plus the focus from the table below, and (c)
-passes `--model gpt-5.5`. The read-only framing is what stops the subagent running
-write-capable, so do not omit it.
+**Run a checkpoint** with the Codex **`/codex:adversarial-review`** command — it is
+purpose-built for this, challenging the chosen approach, design choices, and assumptions,
+and by contract returns Codex's findings verbatim and never patches (so no "read-only"
+framing of your own is needed). That command is `disable-model-invocation`, so invoke its
+engine directly via Bash in the foreground rather than as a slash command:
+
+```bash
+node "$CODEX_COMPANION" adversarial-review --wait --scope <working-tree|branch> [--base main] "<focus text>"
+```
+
+Resolve `$CODEX_COMPANION` to `$CLAUDE_PLUGIN_ROOT/scripts/codex-companion.mjs` when that
+variable is set, otherwise to the highest-versioned
+`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs` (the
+`adversarial-review` command takes no `--model`; it uses Codex's configured review model).
+Pass the checkpoint's **Focus** (from the table below) as the quoted focus text — that is
+the only steering the review needs. Choose the scope by checkpoint: **Architecture** and
+**Artifacts** review the still-uncommitted artifacts with `--scope working-tree`;
+**Implementation** reviews the change's diff with `--scope branch --base main` (or
+`--scope working-tree` if the work is uncommitted). If the foreground `--wait` returns
+while Codex is still running, fetch the finished review with `node "$CODEX_COMPANION"
+result` before presenting.
 
 **After a checkpoint**, present Codex's findings verbatim, ordered by severity, and
 **stop** — never apply fixes or route onward automatically. Ask the user which findings

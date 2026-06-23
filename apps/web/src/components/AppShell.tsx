@@ -12,21 +12,32 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import type { SwitchboardTokens } from '../theme/theme';
-import { EmbossedPanel } from './EmbossedPanel';
-import { JackButton } from './JackButton';
+import { Plug } from '../ui/plug';
+import { Card } from '../ui/surface';
+import { SectionTitle } from '../ui/typography';
+
+/**
+ * House responsive breakpoint (task 8.6): below it the navigation is an off-canvas drawer reached
+ * via the header burger; at/above it the navigation is a persistent rail. One composition adapts —
+ * no separate mobile-only component set.
+ */
+export const LAYOUT_BREAKPOINT = 'sm';
 
 export interface AppShellProps {
   /** Inject a typed client (Storybook / tests). The app builds one from runtime config. */
   client?: SwitchboardClient;
+  /** Live Claude session count shown in the header (display-only). */
+  liveSessions?: number;
 }
 
 /**
- * The mobile-first application shell (design Decision 7) — a header wordmark with the jack
- * motif over a collapsible navbar, and a main region whose "line status" panel round-trips the
- * placeholder route via the typed `hc` client + TanStack Query. A successful round trip proves
- * the bearer path (Decision 3); real screens land in later changes.
+ * The flat mobile-first application shell (ui-prototypes-mvp). A flat header — brand plug +
+ * tracked wordmark, a live-session count, and a burger that opens the nav drawer below the
+ * breakpoint — over a navigation rail and a main region whose line-status `Card` round-trips the
+ * placeholder route. Built from the matured `src/ui` primitives; it **consumes** the resolved
+ * colour scheme (via the `--sb-*` variables) and never sets it.
  */
-export function AppShell({ client: injectedClient }: AppShellProps) {
+export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellProps) {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(false);
   const theme = useMantineTheme();
   const tokens = theme.other as SwitchboardTokens;
@@ -44,43 +55,51 @@ export function AppShell({ client: injectedClient }: AppShellProps) {
 
   return (
     <MantineAppShell
-      header={{ height: 60 }}
-      navbar={{ width: 240, breakpoint: 'sm', collapsed: { mobile: !navOpened } }}
+      header={{ height: 56 }}
+      navbar={{ width: 240, breakpoint: LAYOUT_BREAKPOINT, collapsed: { mobile: !navOpened } }}
       padding="md"
       data-testid="app-shell"
     >
       <MantineAppShell.Header>
-        <Group h="100%" px="md" gap="sm" wrap="nowrap">
-          <Burger
-            opened={navOpened}
-            onClick={toggleNav}
-            hiddenFrom="sm"
-            size="sm"
-            aria-label="Toggle navigation"
-          />
-          <JackButton label="Operator line" active data-testid="brand-jack" />
-          <Title
-            order={1}
-            fz="h3"
-            style={{ letterSpacing: tokens.wordmarkTracking, textTransform: 'uppercase' }}
-          >
-            Switchboard
-          </Title>
+        <Group h="100%" px="md" gap="sm" wrap="nowrap" justify="space-between">
+          <Group gap="sm" wrap="nowrap">
+            <Burger
+              opened={navOpened}
+              onClick={toggleNav}
+              hiddenFrom={LAYOUT_BREAKPOINT}
+              size="sm"
+              aria-label="Toggle navigation"
+              data-testid="nav-burger"
+            />
+            <Plug status="running" size={18} label="Operator line" data-testid="brand-mark" />
+            <Title
+              order={1}
+              fz="h4"
+              style={{ letterSpacing: tokens.wordmarkTracking, textTransform: 'uppercase' }}
+            >
+              Switchboard
+            </Title>
+          </Group>
+          <Group gap={6} wrap="nowrap" data-testid="live-session-count">
+            <Plug
+              status={liveSessions > 0 ? 'running' : 'off'}
+              size={12}
+              label={`${liveSessions} live sessions`}
+            />
+            <Text fz="xs" fw={600}>
+              {liveSessions} live
+            </Text>
+          </Group>
         </Group>
       </MantineAppShell.Header>
 
-      <MantineAppShell.Navbar p="md">
-        <Text fw={700} tt="uppercase" fz="sm" c="patina.8">
-          Lines
-        </Text>
+      <MantineAppShell.Navbar p="md" data-testid="nav-rail">
+        <SectionTitle>Lines</SectionTitle>
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
         <Stack gap="md">
-          <EmbossedPanel data-testid="line-status">
-            <Text fw={700} tt="uppercase" fz="xs" c="patina.8" mb={6}>
-              Line status
-            </Text>
+          <Card title="Line status" data-testid="line-status">
             <Text data-testid="line-status-value">
               {lineStatus.isSuccess
                 ? lineStatus.data.message
@@ -88,7 +107,7 @@ export function AppShell({ client: injectedClient }: AppShellProps) {
                   ? 'line check failed'
                   : 'connecting…'}
             </Text>
-          </EmbossedPanel>
+          </Card>
         </Stack>
       </MantineAppShell.Main>
     </MantineAppShell>

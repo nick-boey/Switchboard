@@ -1,3 +1,13 @@
+> **Superseded in part by the confirmation gate (2026-06-22) — `design.md` is authoritative.**
+> Kept as the original statement of intent. The "three core flow screens" + "toast handoff"
+> below became a single **worktrees hub** with a per-worktree **plug** as the session affordance;
+> the standalone session-list screen and the **launch handoff toast were dropped**; the git/PR
+> status lamps are **display-only** in the MVP. See `prototypes.md` (gate note) and `design.md`.
+> The per-screen **empty / in-progress / error state matrix** and the **connected happy-path
+> click-through** below were **prototype-stage deliverables for the gate walkthrough** (now run);
+> they are **not production scope** here — production state handling belongs to the screen-owning
+> feature changes (`repo-clone-browse`, `worktree-management`, `claude-session-launch`).
+
 ## Why
 
 Before committing backend work to the MVP flow (browse → clone → worktree → launch → hand
@@ -17,7 +27,7 @@ refine their own slice of these prototypes.
   `src/prototypes/ui-prototypes-mvp/`, each mobile-first with a desktop variant and each
   rendering its **empty / in-progress (operation-ledger) / error** states:
   1. Repo browser / clone, 2. Worktree list / create (branch new vs. existing),
-  3. Session list / launch (with a **toast handoff** instructing the user to open the Claude
+  2. Session list / launch (with a **toast handoff** instructing the user to open the Claude
      mobile app).
 - **A connected happy-path click-through** linking the three screens for the gate walkthrough.
 - **Run the confirmation gate**: walk the rendered prototypes with the user; the agreed

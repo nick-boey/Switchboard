@@ -1,5 +1,5 @@
 ---
-title: "Plan: Switchboard MVP"
+title: 'Plan: Switchboard MVP'
 openspec-changes:
   - ui-prototypes-mvp
   - repo-clone-browse
@@ -67,9 +67,9 @@ filesystem and `tmux` as the source of truth.
   identity against an allowlist (passwordless); a **bearer token** from `~/.switchboard`
   is required for direct/loopback/local access. The server only trusts identity headers
   when the request arrived via `serve` (enforced by the loopback bind). Strict
-  origin/CORS policy. This is *not* multi-user auth — it closes the zero-auth hole.
-- **State** — **filesystem + tmux are the source of truth.** Repos and worktrees *are*
-  the disk (`repos/`); sessions *are* tmux. A small JSON config in `~/.switchboard` holds
+  origin/CORS policy. This is _not_ multi-user auth — it closes the zero-auth hole.
+- **State** — **filesystem + tmux are the source of truth.** Repos and worktrees _are_
+  the disk (`~/.switchboard/repos/<org>/<repo>`); sessions _are_ tmux. A small JSON config in `~/.switchboard` holds
   settings + the GitHub PAT. **No database in the MVP** — but long-running operations use
   a **filesystem-backed operation ledger + lock** (see decisions) for idempotency,
   serialization, cancellation, and recovery after restart.
@@ -78,7 +78,7 @@ filesystem and `tmux` as the source of truth.
   with one user, this keeps the container-per-user multi-user path clean.
 - **CLI** — a thin TypeScript `switchboard` package that owns lifecycle/orchestration
   (config bootstrap, spawn + supervise the server, and `--docker` mode), distributed via
-  **npm** (`npx switchboard` / `npm i -g`). It is *not* the server; it imports the
+  **npm** (`npx switchboard` / `npm i -g`). It is _not_ the server; it imports the
   server's programmatic `start(ctx)`.
 - **Runtime** — local process, or a Docker container that brings up Tailscale and serves
   the SPA on the tailnet. Container-per-user is the multi-user path later.
@@ -126,16 +126,16 @@ repos/<repo-id>/worktrees/<wt-id>/ # one directory per worktree
 Sequenced. Ordering constraints are recorded in each change's `dependencies.md` (never as
 prose in `tasks.md`).
 
-| # | Change | Schema | Purpose |
-|---|--------|--------|---------|
-| **0** | **runtime spike** *(throwaway investigation — not an OpenSpec change)* | — | Prove the riskiest runtime assumptions **before** `foundations` bakes them in: Tailscale-in-Docker (`serve`, bind), the **Tailscale-identity-header auth path** behind `serve`, config-volume persistence, **Claude credential persistence** in a container, and process/tmux supervision. Output: a findings note under `docs/dev/spikes/`; throwaway code lives outside the monorepo. Go/no-go on the assumptions feeds `foundations` design. |
-| 1 | `foundations` ✅ *archived* | switch-feature | Monorepo, TS, web shell + Mantine + retro design tokens, Storybook, Hono skeleton + RPC wiring, **auth gate + loopback bind + CORS + bind-address tests**, **RuntimeContext** abstraction, Vitest, Playwright E2E harness (temp-git fixture), Just, OTel instrumentation + redaction policy, `site/` + LikeC4, `shared` package. **Builds the test harness everything else needs.** |
-| 1b | `prototype-storybook-harness` ✅ *archived* | switch-feature | Stand up the **dedicated prototype-viewing Storybook config** (renders `src/prototypes/**` while the production config keeps them excluded), the `definePrototypeMeta` helper, the location-based indexer (titles + quarantine tags), and a `storybook:prototypes` script. Foundations deferred this to "the `switch-ui-prototype` workflow"; it is the prerequisite that makes the prototyping stage runnable. |
-| 2 | `ui-prototypes-mvp` | switch-feature-ui | Lightweight **upfront** prototypes (hybrid strategy): the design language + core screens (repo browser/clone, worktree list/create, session list/launch), desktop + mobile. **Confirmation gate** for user stories before backend work. |
-| 3 | `repo-clone-browse` | switch-feature | List GitHub repos/orgs (PAT) + bare clone → `repos/<repo-id>/.bare` + list cloned repos. |
-| 4 | `worktree-management` | switch-feature | Create worktree + branch → `repos/<repo-id>/worktrees/<wt-id>`; canonical ID scheme; "branch exists on remote" vs "new branch". |
-| 5 | `claude-session-launch` | switch-feature | Launch `claude --remote-control` detached in tmux; list/track sessions via the path-safe naming scheme. |
-| 6 | `runtime-cli-docker` | switch-feature | TypeScript `switchboard` CLI, `~/.switchboard` config, Docker image, Tailscale bring-up — **productionizing the spike-0 findings**. |
+| #     | Change                                                                 | Schema            | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----- | ---------------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0** | **runtime spike** _(throwaway investigation — not an OpenSpec change)_ | —                 | Prove the riskiest runtime assumptions **before** `foundations` bakes them in: Tailscale-in-Docker (`serve`, bind), the **Tailscale-identity-header auth path** behind `serve`, config-volume persistence, **Claude credential persistence** in a container, and process/tmux supervision. Output: a findings note under `docs/dev/spikes/`; throwaway code lives outside the monorepo. Go/no-go on the assumptions feeds `foundations` design. |
+| 1     | `foundations` ✅ _archived_                                            | switch-feature    | Monorepo, TS, web shell + Mantine + retro design tokens, Storybook, Hono skeleton + RPC wiring, **auth gate + loopback bind + CORS + bind-address tests**, **RuntimeContext** abstraction, Vitest, Playwright E2E harness (temp-git fixture), Just, OTel instrumentation + redaction policy, `site/` + LikeC4, `shared` package. **Builds the test harness everything else needs.**                                                             |
+| 1b    | `prototype-storybook-harness` ✅ _archived_                            | switch-feature    | Stand up the **dedicated prototype-viewing Storybook config** (renders `src/prototypes/**` while the production config keeps them excluded), the `definePrototypeMeta` helper, the location-based indexer (titles + quarantine tags), and a `storybook:prototypes` script. Foundations deferred this to "the `switch-ui-prototype` workflow"; it is the prerequisite that makes the prototyping stage runnable.                                 |
+| 2     | `ui-prototypes-mvp`                                                    | switch-feature-ui | Lightweight **upfront** prototypes (hybrid strategy): the **flat** design language matured into production primitives + the core screens, desktop + mobile. **Gate passed (2026-06-22):** screens re-centred on a **worktrees hub** (repos → worktrees with a per-worktree **plug** as the session affordance — no standalone session-list screen, no launch handoff toast); git/PR status lamps are **display-only** (interactive helpers → Future features). The gate decisions seed the specs of changes 3–5.                                                                                                                                                          |
+| 3     | `repo-clone-browse`                                                    | switch-feature    | List GitHub repos/orgs (PAT) + bare clone → `repos/<repo-id>/.bare` + list cloned repos.                                                                                                                                                                                                                                                                                                                                                        |
+| 4     | `worktree-management`                                                  | switch-feature    | Create worktree + branch → `repos/<repo-id>/worktrees/<wt-id>`; canonical ID scheme; "branch exists on remote" vs "new branch".                                                                                                                                                                                                                                                                                                                 |
+| 5     | `claude-session-launch`                                                | switch-feature    | Launch `claude --remote-control` detached in tmux; list/track sessions via the path-safe naming scheme.                                                                                                                                                                                                                                                                                                                                         |
+| 6     | `runtime-cli-docker`                                                   | switch-feature    | TypeScript `switchboard` CLI, `~/.switchboard` config, Docker image, Tailscale bring-up — **productionizing the spike-0 findings**.                                                                                                                                                                                                                                                                                                             |
 
 **Dependencies**
 
@@ -144,12 +144,12 @@ prose in `tasks.md`).
   Because it is not an OpenSpec change, it is sequenced here, not via `depends-on`.
 - All changes depend on `foundations`.
 - **`prototype-storybook-harness` before `ui-prototypes-mvp`** — the prototyping stage needs a
-  Storybook config that *renders* `src/prototypes/**` (foundations shipped only the
+  Storybook config that _renders_ `src/prototypes/**` (foundations shipped only the
   exclusion, deferring the viewing config to "the `switch-ui-prototype` workflow"). The
   harness is a hard prerequisite that makes the prototyping stage runnable, and is reused by
   every later UI change's prototyping.
 - `ui-prototypes-mvp` after `foundations` + `prototype-storybook-harness` (Storybook must
-  exist *and render prototypes* before we prototype).
+  exist _and render prototypes_ before we prototype).
 - **`repo-clone-browse` hard-depends on `ui-prototypes-mvp`** — prototypes are a real
   user-story confirmation gate, so backend work cannot start until they are confirmed.
 - `repo-clone-browse` → `worktree-management` → `claude-session-launch` (each needs the
@@ -168,21 +168,21 @@ then refine/extend their own prototypes as the spike/implementation reveal backe
 These hold across all changes. Changing one is a programme-level decision and is edited
 here.
 
-| Area | Decision | Rationale |
-|------|----------|-----------|
-| API layer | **Hono RPC + Zod**; runtime validation on all mutation inputs; **API contract tests** to catch web↔server schema drift | End-to-end types with minimal boilerplate; Zod is the single schema source; contract tests stop the workspace boundary from silently coupling/drifting. |
-| Client server-state | **TanStack Query** | Standard for a client–server SPA; pairs cleanly with Mantine. |
-| UI | **Mantine** + '50s retro switchboard theme | Per brief; theme tokens established in `foundations`. |
-| Auth | **Tailscale identity (`Tailscale-User-Login`, allowlist) behind `tailscale serve` + bearer-token fallback**; loopback bind; `/health` exempt; strict CORS. Identity trust is config-gated (`trustServeIdentity`, default **off**) — the real boundary is **serve-exclusive ingress (network isolation)**, not the headers (markers select a path, they don't prove identity). A Unix-domain-socket serve ingress is the deferred hardening (`runtime-cli-docker`). | Closes the zero-auth hole cheaply, passwordless on mobile, and the identity is exactly what container-per-user multi-user keys off. **Validated in spike 0.** |
-| Persistence | **Filesystem + tmux as source of truth + `~/.switchboard` JSON config**, plus a **filesystem-backed operation ledger + lock** for long-running ops (clone/worktree/launch): idempotency, serialization, cancellation, stale-lock recovery after restart | Repos/worktrees *are* the disk; sessions *are* tmux. No DB to drift — but raw disk/tmux truth is insufficient for in-flight operations, so the ledger/lock fills that gap. |
-| Runtime context | Services take a **`RuntimeContext`** (workspace root, config, logger, telemetry, identity); no host-global paths hardcoded into service APIs | Preserves a clean container-per-user multi-user path even though MVP is single-user. |
-| GitHub auth | **PAT** (fine-grained) behind an OAuth-ready provider interface | Simplest for a single trusted user; OAuth/keychain slots in later. |
-| Token handling | Git **credential helper** reading from `~/.switchboard`; never embed PAT in clone URLs / `.git/config` / process args / logs; file perms `600`; redaction + subprocess tests prove no leak; container secret mounting for the Docker path | Avoids writing the token into every clone; the subprocess/redaction tests are what make "no leak" verifiable rather than aspirational. |
-| Runtime | **Single-user MVP; container-per-user** for multi-user later | Strongest isolation + simplest per-user Tailscale identity + permission story. |
-| CLI | **TypeScript**, thin `apps/cli` package, **npm** distribution; imports server `start(ctx)`; packaged-CLI smoke test | Single language across the stack; clean separation from the server; tests the shipped path, not just dev imports. |
-| Build/tooling | **pnpm workspaces**, **Just** task runner | Multi-package monorepo (web/server/cli/shared) earns workspaces; Just per brief. |
-| Observability | **OpenTelemetry (semconv)** instrumented now with a **redaction policy** (allow/block attribute list); **Seq deferred** (OTLP export behind a config toggle, off by default) | Get instrumentation in early without standing up Seq as a hard MVP dependency — and without leaking secrets/paths into telemetry. |
-| Session metadata | Switchboard tracks **session existence + worktree mapping only** (path-safe tmux session naming). Conversation metadata (model, context usage, last message) is the **mobile app's** job. | Keeps "tmux as source of truth" viable; richer metadata would need a store and is explicitly out of scope. |
+| Area                | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Rationale                                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API layer           | **Hono RPC + Zod**; runtime validation on all mutation inputs; **API contract tests** to catch web↔server schema drift                                                                                                                                                                                                                                                                                                                                             | End-to-end types with minimal boilerplate; Zod is the single schema source; contract tests stop the workspace boundary from silently coupling/drifting.                    |
+| Client server-state | **TanStack Query**                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Standard for a client–server SPA; pairs cleanly with Mantine.                                                                                                              |
+| UI                  | **Mantine** + '50s retro switchboard theme                                                                                                                                                                                                                                                                                                                                                                                                                         | Per brief; theme tokens established in `foundations`.                                                                                                                      |
+| Auth                | **Tailscale identity (`Tailscale-User-Login`, allowlist) behind `tailscale serve` + bearer-token fallback**; loopback bind; `/health` exempt; strict CORS. Identity trust is config-gated (`trustServeIdentity`, default **off**) — the real boundary is **serve-exclusive ingress (network isolation)**, not the headers (markers select a path, they don't prove identity). A Unix-domain-socket serve ingress is the deferred hardening (`runtime-cli-docker`). | Closes the zero-auth hole cheaply, passwordless on mobile, and the identity is exactly what container-per-user multi-user keys off. **Validated in spike 0.**              |
+| Persistence         | **Filesystem + tmux as source of truth + `~/.switchboard` JSON config**, plus a **filesystem-backed operation ledger + lock** for long-running ops (clone/worktree/launch): idempotency, serialization, cancellation, stale-lock recovery after restart                                                                                                                                                                                                            | Repos/worktrees _are_ the disk; sessions _are_ tmux. No DB to drift — but raw disk/tmux truth is insufficient for in-flight operations, so the ledger/lock fills that gap. |
+| Runtime context     | Services take a **`RuntimeContext`** (workspace root, config, logger, telemetry, identity); no host-global paths hardcoded into service APIs                                                                                                                                                                                                                                                                                                                       | Preserves a clean container-per-user multi-user path even though MVP is single-user.                                                                                       |
+| GitHub auth         | **PAT** (fine-grained) behind an OAuth-ready provider interface                                                                                                                                                                                                                                                                                                                                                                                                    | Simplest for a single trusted user; OAuth/keychain slots in later.                                                                                                         |
+| Token handling      | Git **credential helper** reading from `~/.switchboard`; never embed PAT in clone URLs / `.git/config` / process args / logs; file perms `600`; redaction + subprocess tests prove no leak; container secret mounting for the Docker path                                                                                                                                                                                                                          | Avoids writing the token into every clone; the subprocess/redaction tests are what make "no leak" verifiable rather than aspirational.                                     |
+| Runtime             | **Single-user MVP; container-per-user** for multi-user later                                                                                                                                                                                                                                                                                                                                                                                                       | Strongest isolation + simplest per-user Tailscale identity + permission story.                                                                                             |
+| CLI                 | **TypeScript**, thin `apps/cli` package, **npm** distribution; imports server `start(ctx)`; packaged-CLI smoke test                                                                                                                                                                                                                                                                                                                                                | Single language across the stack; clean separation from the server; tests the shipped path, not just dev imports.                                                          |
+| Build/tooling       | **pnpm workspaces**, **Just** task runner                                                                                                                                                                                                                                                                                                                                                                                                                          | Multi-package monorepo (web/server/cli/shared) earns workspaces; Just per brief.                                                                                           |
+| Observability       | **OpenTelemetry (semconv)** instrumented now with a **redaction policy** (allow/block attribute list); **Seq deferred** (OTLP export behind a config toggle, off by default)                                                                                                                                                                                                                                                                                       | Get instrumentation in early without standing up Seq as a hard MVP dependency — and without leaking secrets/paths into telemetry.                                          |
+| Session metadata    | Switchboard tracks **session existence + worktree mapping only** (path-safe tmux session naming). Conversation metadata (model, context usage, last message) is the **mobile app's** job.                                                                                                                                                                                                                                                                          | Keeps "tmux as source of truth" viable; richer metadata would need a store and is explicitly out of scope.                                                                 |
 
 ## Testing strategy
 
@@ -239,7 +239,19 @@ TDD is mandatory across the programme.
 
 ## Future features (architecture must not preclude)
 
-Multi-user (container-per-user); worktrees from GitHub issues + linked PRs; delete
-worktrees/branches; git status + commands; file viewing (VS Code on desktop, read on
-mobile); session info (model/context/last-message — mobile app's domain today); stream
-tmux output to a browser terminal.
+The architecture must not preclude these; they are explicitly out of MVP scope.
+
+- **Indicator-lamp actions — git + GitHub helpers.** The per-worktree **git lamp** and
+  **PR lamp** ship **display-only** in the MVP (decided at the `ui-prototypes-mvp`
+  confirmation gate, 2026-06-22 — the lamps render status only; clicking them is inert).
+  A future stage makes them interactive: **git helpers** (status / fetch / pull / push
+  and related commands behind the git lamp) and **GitHub helpers** (PR checks / review
+  state / merge behind the PR lamp). The prototypes already sketch the deferred
+  "indicator action" modal (`apps/web/src/prototypes/ui-prototypes-mvp/worktrees.stories.tsx`
+  → the `MobileIndicatorAction` story).
+- Multi-user (container-per-user).
+- Worktrees from GitHub issues + linked PRs.
+- Delete worktrees/branches.
+- File viewing (VS Code on desktop, read on mobile).
+- Session info (model / context / last-message — the mobile app's domain today).
+- Stream tmux output to a browser terminal.
