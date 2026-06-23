@@ -87,7 +87,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 6. Clone as a tracked operation (apps/server)
 
-- [ ] 6.1 Write the failing tests: a clone **starts** as a tracked operation and returns
+- [x] 6.1 Write the failing tests: a clone **starts** as a tracked operation and returns
       immediately in a `cloning` state, reaching `ready` on success; a request for an
       already-cloned or in-flight repo is **idempotent** (returns the existing result/op);
       concurrent same-repo clones are **serialized**; **abort** cancels the subprocess and
@@ -97,7 +97,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
       is removed, gated on the completion marker); a `running` clone with a dead process is
       **reconciled** on restart; clone failures record a typed error (`unauthorized` /
       `not-found` / `rate-limited` / git failure).
-- [ ] 6.2 Implement the clone-through-ledger orchestration (Git service + operation ledger/lock
+- [x] 6.2 Implement the clone-through-ledger orchestration (Git service + operation ledger/lock
       + typed failure mapping) to green.
 
 ## 7. API routes, typed client & contract (apps/server)

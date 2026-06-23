@@ -105,7 +105,12 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
   const finalizeFailure = async (record: OperationRecord, err: unknown): Promise<void> => {
     record.state = 'failed';
     record.finishedAt = clock.now();
-    record.error = { kind: 'git-failure', message: String(err) };
+    // Carry a typed `kind` if the worker supplied one; never store the raw message (no-leak).
+    const kind =
+      err && typeof err === 'object' && 'kind' in err && typeof err.kind === 'string'
+        ? err.kind
+        : 'git-failure';
+    record.error = { kind };
     write(record);
     const handler = handlers[record.type];
     if (!(await handler.isComplete(record))) await handler.cleanup(record);

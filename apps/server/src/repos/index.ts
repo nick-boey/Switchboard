@@ -1,7 +1,9 @@
-/** The `repo-clone` slice: the Git service, credential helper, and git-subprocess runner. */
+/** The `repo-clone` slice: clone orchestration, Git service, credential helper, git runner. */
+export { createCloneOrchestrator } from './clone.js';
+export type { CloneOrchestrator, CloneOrchestratorDeps } from './clone.js';
 export { createGitService, cloneUrlFor } from './git-service.js';
 export type { GitService, GitServiceDeps, CloneOptions } from './git-service.js';
-export { createGitRunner } from './git-runner.js';
+export { createGitRunner, GitCloneError, classifyGitStderr } from './git-runner.js';
 export type { GitRunner, GitRunOptions } from './git-runner.js';
 export {
   writeGithubToken,
