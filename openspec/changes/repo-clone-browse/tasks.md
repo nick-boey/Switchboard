@@ -115,7 +115,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 8. Web UI — New repository & getting-ready (apps/web)
 
-- [ ] 8.1 Write the failing UI tests for the **New repository** screen (TanStack Query +
+- [x] 8.1 Write the failing UI tests for the **New repository** screen (TanStack Query +
       `src/ui/*` primitives, ported from the `new-repository` prototype, not imported): Local
       source disabled; the **Owner** selector offers the authenticated user's own account and
       their organisations, and Select repository validates the chosen owner and repository
@@ -124,13 +124,13 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
       `<owner>/<repo>`, including a `.git`-suffixed URL whose suffix is normalized away; the
       **empty/unconfigured** state prompts to add a PAT when none is
       configured; mobile + desktop, both colour schemes.
-- [ ] 8.2 Implement the New repository screen to green.
-- [ ] 8.3 Write the failing UI tests for the repository **getting-ready** screen: **in-progress**
+- [x] 8.2 Implement the New repository screen to green.
+- [x] 8.3 Write the failing UI tests for the repository **getting-ready** screen: **in-progress**
       (cloning indicator + Abort), **error** (Retry + Abort/back, no raw command/GitHub output),
       and **ready** states, driven by polling the operation status; the **Abort action invokes
       the abort mutation** (typed client `abort` method) and the screen reflects the resulting
       `aborted` state.
-- [ ] 8.4 Implement the getting-ready screen (start clone → navigate → poll status → ready, with
+- [x] 8.4 Implement the getting-ready screen (start clone → navigate → poll status → ready, with
       the Abort action wired to the abort mutation) to green.
 
 ## 9. End-to-end (Playwright — requires `just build`)
