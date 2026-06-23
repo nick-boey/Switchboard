@@ -179,6 +179,32 @@ test('aborts an in-flight clone → aborted state', async ({ page }) => {
   await expect(page.getByTestId('clone-aborted')).toBeVisible({ timeout: 20_000 });
 });
 
+test('retry from a terminal state resumes polling and reaches ready', async ({ page }) => {
+  // Regression for the impl-review finding: after a clone reaches a terminal state (here aborted),
+  // a SAME-repo Retry must re-enable status polling so the screen progresses cloning→ready. The
+  // bug left the `['clone-status', repoId]` query pinned to the terminal value (refetchInterval
+  // false), so the user stayed on the stale terminal screen forever.
+  test.setTimeout(60_000);
+  await openNewRepository(page);
+  await expect(page.getByTestId('method-toggle')).toBeVisible();
+  await page.getByRole('button', { name: 'From URL' }).click();
+
+  // `acme/slow` maps to the slow ext transport, so the first clone stays in-flight long enough to
+  // abort it into a terminal state.
+  await page.getByTestId('url-input').fill('https://github.com/acme/slow');
+  await page.getByTestId('clone-button').click();
+  await expect(page.getByTestId('clone-abort')).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId('clone-abort').click();
+  await expect(page.getByTestId('clone-aborted')).toBeVisible({ timeout: 20_000 });
+
+  // Retry the SAME repo: a fresh server-side clone starts, and the screen must resume polling.
+  await page.getByTestId('clone-retry').click();
+  // Polling resumed: we are back in the in-flight (cloning) state, not stuck on aborted.
+  await expect(page.getByTestId('cloning-indicator')).toBeVisible({ timeout: 20_000 });
+  // And it progresses all the way to ready (the slow transport completes after a few seconds).
+  await expect(page.getByTestId('repo-ready')).toBeVisible({ timeout: 30_000 });
+});
+
 test('shows the error state when a clone fails', async ({ page }) => {
   await openNewRepository(page);
   await expect(page.getByTestId('method-toggle')).toBeVisible();

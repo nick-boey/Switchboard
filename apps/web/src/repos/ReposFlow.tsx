@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { OperationStatus } from '@switchboard/shared';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import { NewRepository } from './NewRepository';
@@ -16,6 +16,7 @@ export interface ReposFlowProps {
 
 export function ReposFlow({ client: injected }: ReposFlowProps) {
   const client = useMemo(() => injected ?? createSwitchboardClient(), [injected]);
+  const queryClient = useQueryClient();
   const [repoId, setRepoId] = useState<string | null>(null);
 
   const startClone = useMutation({
@@ -24,7 +25,14 @@ export function ReposFlow({ client: injected }: ReposFlowProps) {
       if (!res.ok) throw new Error(`clone failed: ${res.status}`);
       return res.json();
     },
-    onSuccess: (status) => setRepoId(status.repoId),
+    onSuccess: (status) => {
+      // Seed the just-started (non-terminal) status into the same query `GettingReady` polls, so a
+      // SAME-repo retry overwrites a cached terminal `error`/`aborted` value and re-enables the
+      // status `refetchInterval` — otherwise the mounted screen stays pinned to the stale terminal
+      // state and never progresses cloning→ready. Mirrors the abort handler's cache write.
+      queryClient.setQueryData(['clone-status', status.repoId], status);
+      setRepoId(status.repoId);
+    },
   });
 
   if (repoId) {
