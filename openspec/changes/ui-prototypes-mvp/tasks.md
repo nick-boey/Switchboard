@@ -105,23 +105,23 @@ Resolver` (`--sb-*`), wired into `AppProviders`; embossed tokens removed; `Embos
 
 ## 8. Production colour scheme, app shell re-treatment, responsive conventions & quarantine
 
-- [ ] 8.1 Write the failing test: the production colour scheme follows the OS
+- [x] 8.1 Write the failing test: the production colour scheme follows the OS
       `prefers-color-scheme` with no in-app toggle — under emulated `dark` the app entry and a
       production story resolve to the dark scheme.
-- [ ] 8.2 Set the production scheme to `auto`: change the `AppProviders` default from `light`
+- [x] 8.2 Set the production scheme to `auto`: change the `AppProviders` default from `light`
       to `auto` (and/or the app entry `main.tsx` and the production Storybook
       `.storybook/preview.tsx`), so light/dark is driven only by `prefers-color-scheme`.
-- [ ] 8.3 Write the failing test: `AppShell` renders the flat header (wordmark, live-session
+- [x] 8.3 Write the failing test: `AppShell` renders the flat header (wordmark, live-session
       count, burger → drawer) using the matured primitives and **consumes** the resolved scheme
       (it does not set it).
-- [ ] 8.4 Re-treat `components/AppShell.tsx` to the flat header, removing all embossed-token and
+- [x] 8.4 Re-treat `components/AppShell.tsx` to the flat header, removing all embossed-token and
       `EmbossedPanel`/`JackButton` usage.
-- [ ] 8.5 Write the failing responsive test: a screen composed from the primitives renders the
+- [x] 8.5 Write the failing responsive test: a screen composed from the primitives renders the
       single-column + slide-in-drawer layout at a mobile width and the multi-column + persistent
       rail layout at a desktop width, with no horizontal overflow at either width.
-- [ ] 8.6 Encode the breakpoint + drawer↔rail switch as the house responsive convention so the
+- [x] 8.6 Encode the breakpoint + drawer↔rail switch as the house responsive convention so the
       composition adapts without a separate mobile-only component set.
-- [ ] 8.7 Add a guard test confirming the prototype quarantine holds: app code under `src/`
+- [x] 8.7 Add a guard test confirming the prototype quarantine holds: app code under `src/`
       (outside `src/prototypes/**`) importing a prototype fails ESLint `no-restricted-imports`,
       and the matured primitives are imported from their production paths.
 

@@ -8,9 +8,8 @@ export interface AppProvidersProps {
   /** Inject a pre-built QueryClient (Storybook / tests); one is created per app otherwise. */
   queryClient?: QueryClient;
   /**
-   * Color scheme forwarded to Mantine's `defaultColorScheme`. Defaults to `'light'`, so the app
-   * entry and the production Storybook render exactly as before. The prototype workbench preview
-   * passes `'auto'` so the OS `prefers-color-scheme` drives light/dark.
+   * Color scheme forwarded to Mantine's `defaultColorScheme`. Defaults to `'auto'` (task 8.2), so
+   * the production app and Storybook follow the OS `prefers-color-scheme` with no in-app toggle.
    */
   colorScheme?: MantineColorScheme;
 }
@@ -20,7 +19,7 @@ export interface AppProvidersProps {
  * switchboard tokens, plus the TanStack Query client for server state. Both the app entry and
  * Storybook mount through here so the shell renders identically everywhere.
  */
-export function AppProviders({ children, queryClient, colorScheme = 'light' }: AppProvidersProps) {
+export function AppProviders({ children, queryClient, colorScheme = 'auto' }: AppProvidersProps) {
   const [client] = useState(
     () =>
       queryClient ??

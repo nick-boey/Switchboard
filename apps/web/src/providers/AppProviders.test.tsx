@@ -24,21 +24,21 @@ vi.mock('@mantine/core', async (importOriginal) => {
 const { AppProviders } = await import('./AppProviders');
 
 describe('AppProviders color scheme', () => {
-  it('defaults to light (production rendering unchanged)', () => {
+  it('defaults to auto — the OS prefers-color-scheme drives light/dark, no in-app toggle (task 8.2)', () => {
     renderToStaticMarkup(
       <AppProviders>
         <div />
       </AppProviders>,
     );
-    expect(captured.defaultColorScheme).toBe('light');
+    expect(captured.defaultColorScheme).toBe('auto');
   });
 
-  it('forwards an explicit colorScheme="auto" to Mantine', () => {
+  it('forwards an explicit colorScheme override to Mantine', () => {
     renderToStaticMarkup(
-      <AppProviders colorScheme="auto">
+      <AppProviders colorScheme="light">
         <div />
       </AppProviders>,
     );
-    expect(captured.defaultColorScheme).toBe('auto');
+    expect(captured.defaultColorScheme).toBe('light');
   });
 });
