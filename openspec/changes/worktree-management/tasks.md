@@ -10,11 +10,11 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 1. Test infrastructure
 
-- [ ] 1.1 Extend the **temp-git fixture** so worktree tests have a bare clone to operate on: the
+- [x] 1.1 Extend the **temp-git fixture** so worktree tests have a bare clone to operate on: the
       fixture remote carries **a known existing branch** (for the existing-remote-branch path),
       plus a helper to **bare-clone it locally** to `repos/<owner>/<repo>/.bare` (reusing the Git
       service), with a smoke test proving the bare repo and the existing branch are present.
-- [ ] 1.2 Build the **session-probe + PR-merged seam fakes**: controllable fakes for the
+- [x] 1.2 Build the **session-probe + PR-merged seam fakes**: controllable fakes for the
       `noActiveSession` and `prMerged` inputs to the safe-to-delete predicate, so the predicate can
       be driven through every branch (safe / dirty / session-active / not-merged / force)
       deterministically, with a smoke test.
