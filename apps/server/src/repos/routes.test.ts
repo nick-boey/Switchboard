@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeTestContext } from '@switchboard/shared/testing';
+import { configSchema } from '@switchboard/shared';
+import { createFakeGitHub, makeTestContext } from '@switchboard/shared/testing';
 import type {
   OperationStatus,
   RepoListResponse,
@@ -8,6 +9,7 @@ import type {
 } from '@switchboard/shared';
 import { start } from '../server.js';
 import { createServerClient, type ServerClient } from '../client.js';
+import { listGitHubRepos } from '../github/index.js';
 import type { CloneOrchestrator } from './clone.js';
 
 /**
@@ -167,5 +169,36 @@ describe('repo routes + typed client', () => {
     const res = await client.repos.github.$get();
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'ok' });
+  });
+
+  it('github: a fine-grained PAT 403 (quota remaining) surfaces typed unauthorized, not a 500', async () => {
+    const fake = makeFake();
+    // Drive the REAL service + provider so a regression (generic Error → rethrow) would surface as
+    // an opaque 500 from this route rather than the typed `unauthorized` state the spec requires.
+    const github = createFakeGitHub({
+      login: 'nick-boey',
+      organisations: [],
+      repositories: [],
+      token: 'ghp_test',
+      fail: { status: 403, forbidden: true },
+    });
+    const githubCtx = makeTestContext({
+      config: configSchema.parse({
+        bearerToken: 'x',
+        github: { token: 'ghp_test', apiBaseUrl: 'http://github.fake' },
+      }),
+    });
+    handle = await start(makeTestContext(), {
+      repos: {
+        orchestrator: fake.orchestrator,
+        listGitHub: () => listGitHubRepos(githubCtx, { fetch: github.fetch }),
+      },
+    });
+    const client = createServerClient(handle.url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const res = await client.repos.github.$get();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: 'unauthorized' });
   });
 });

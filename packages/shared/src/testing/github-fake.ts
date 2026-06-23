@@ -25,7 +25,14 @@ export interface FakeGitHubRepo {
 /** Forced-failure modes the fake can be put into (every endpoint returns the error). */
 export type FakeGitHubFailure =
   | { status: 401 }
+  /** A `403` rate limit: budget exhausted, carrying `x-ratelimit-remaining: 0` + reset. */
   | { status: 403; resetAt: number }
+  /**
+   * A `403` authorization denial that still has quota remaining — what a fine-grained PAT returns
+   * when its scope or per-resource access is denied. Carries a positive `x-ratelimit-remaining`,
+   * so it must map to `unauthorized`, NOT `rate-limited`.
+   */
+  | { status: 403; forbidden: true }
   | { status: 404 };
 
 export interface FakeGitHubFixtures {
@@ -97,6 +104,10 @@ export function createFakeGitHub(fixtures: FakeGitHubFixtures): FakeGitHub {
     if (fixtures.fail) {
       const { fail } = fixtures;
       if (fail.status === 403) {
+        if ('forbidden' in fail) {
+          // Authorization denial WITH quota remaining (fine-grained PAT scope/resource denial).
+          return c.json(ERROR_BODY, 403, { 'x-ratelimit-remaining': '4999' });
+        }
         return c.json(ERROR_BODY, 403, {
           'x-ratelimit-remaining': '0',
           'x-ratelimit-reset': String(fail.resetAt),

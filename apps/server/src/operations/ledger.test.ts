@@ -178,6 +178,68 @@ describe('operation ledger + lock', () => {
     await ledger.whenSettled('a/b');
   });
 
+  it('abort → immediate retry: a late-settling stale worker must not orphan the retry controller', async () => {
+    const ledger = makeLedger();
+
+    // op1's worker observes its abort but its (killed) git process emits `close` LATE: `work1`
+    // stays pending after `abort` returns, exactly as a real SIGTERM'd subprocess does.
+    const work1 = deferred<void>();
+    let op1Aborted = false;
+    const op1 = await ledger.start({
+      type: 'clone',
+      key: 'a/b',
+      run: ({ signal }) => {
+        signal.addEventListener('abort', () => {
+          op1Aborted = true;
+        });
+        return work1.promise;
+      },
+    });
+
+    const aborted1 = await ledger.abort('a/b');
+    expect(aborted1?.state).toBe('aborted');
+    expect(op1Aborted).toBe(true);
+    expect(cleaned).toEqual(['a/b']);
+
+    // Immediate retry of the SAME repo installs a fresh running op with its own controller.
+    const work2 = deferred<void>();
+    let op2Aborted = false;
+    const retry = await ledger.start({
+      type: 'clone',
+      key: 'a/b',
+      run: ({ signal }) => {
+        signal.addEventListener('abort', () => {
+          op2Aborted = true;
+          work2.reject(new Error('killed'));
+        });
+        return work2.promise;
+      },
+    });
+    expect(retry.state).toBe('running');
+    expect(retry.id).not.toBe(op1.id);
+
+    // Now op1's killed process finally emits `close`; its worker settles, late. This path is
+    // microtask-bound (no async I/O — the id check fails so no finalize/cleanup runs), so a single
+    // macrotask boundary deterministically drains op1's worker, including its `finally`.
+    work1.reject(new Error('late close'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The late stale worker must not have flipped the retry's record nor orphaned its controller.
+    const live = await ledger.get('a/b');
+    expect(live?.id).toBe(retry.id);
+    expect(live?.state).toBe('running');
+
+    // Aborting the retry MUST terminate its live subprocess (its abort signal must fire) and clean
+    // exactly the still-incomplete target.
+    const aborted2 = await ledger.abort('a/b');
+    expect(op2Aborted).toBe(true);
+    expect(aborted2?.id).toBe(retry.id);
+    expect(aborted2?.state).toBe('aborted');
+    expect(cleaned).toEqual(['a/b', 'a/b']);
+
+    await ledger.whenSettled('a/b');
+  });
+
   it('reconciles a running operation whose process is dead on restart', async () => {
     const ledger1 = makeLedger();
     const work = deferred<void>();

@@ -61,4 +61,22 @@ describe('listGitHubRepos service', () => {
     });
     expect(result).toEqual({ status: 'unauthorized' });
   });
+
+  it('maps a fine-grained PAT 403 with quota remaining onto unauthorized (not a rethrown 500)', async () => {
+    const fake = createFakeGitHub({
+      login: 'nick-boey',
+      organisations: [],
+      repositories: [],
+      token,
+      fail: { status: 403, forbidden: true },
+    });
+    const result = await listGitHubRepos(ctxWithGithub(), {
+      provider: createPatGitHubProvider({
+        token,
+        apiBaseUrl: 'http://github.fake',
+        fetch: fake.fetch,
+      }),
+    });
+    expect(result).toEqual({ status: 'unauthorized' });
+  });
 });

@@ -150,7 +150,13 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
           }
         });
       } finally {
-        controllers.delete(record.key);
+        // Retract the controller only if it is still the one this worker installed. After an
+        // abort + immediate retry on the same key, the retry installs a fresh controller under
+        // this key; a late-settling stale worker (its killed git process emitting `close` after
+        // the retry started) must NOT delete the retry's controller, or the retry becomes
+        // un-abortable — a later abort would mark the ledger aborted and run cleanup without ever
+        // terminating the live subprocess.
+        if (controllers.get(record.key) === controller) controllers.delete(record.key);
       }
     })();
     settled.set(record.key, task);

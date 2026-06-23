@@ -50,6 +50,19 @@ export interface PatGitHubProviderOptions {
 /** Defensive page cap so a pathological `Link` chain cannot loop unbounded (Decision 2). */
 const MAX_PAGES = 50;
 
+/**
+ * The rate-limit reset instant (ISO 8601) from response HEADERS only — never the body, so the
+ * no-leak guarantee holds. Prefers `x-ratelimit-reset` (epoch seconds); falls back to a numeric
+ * `Retry-After` (delay in seconds from now) where GitHub uses that for a secondary rate limit.
+ */
+function rateLimitResetAt(res: Response): string | undefined {
+  const reset = Number(res.headers.get('x-ratelimit-reset'));
+  if (Number.isFinite(reset)) return new Date(reset * 1000).toISOString();
+  const retryAfter = Number(res.headers.get('retry-after'));
+  if (Number.isFinite(retryAfter)) return new Date(Date.now() + retryAfter * 1000).toISOString();
+  return undefined;
+}
+
 /** Extract the `rel="next"` URL from a GitHub `Link` header, or `null`. */
 function parseNextLink(linkHeader: string | null): string | null {
   if (!linkHeader) return null;
@@ -74,12 +87,15 @@ export function createPatGitHubProvider(options: PatGitHubProviderOptions): GitH
     if (res.ok) return res;
     // Map by status only — the error body is never read, surfaced, or logged.
     if (res.status === 401) throw new GitHubError('unauthorized');
-    if (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0') {
-      const reset = Number(res.headers.get('x-ratelimit-reset'));
-      throw new GitHubError(
-        'rate-limited',
-        Number.isFinite(reset) ? new Date(reset * 1000).toISOString() : undefined,
-      );
+    if (res.status === 403) {
+      // A 403 with the rate-limit budget exhausted is a rate limit; carry the reset (from
+      // `x-ratelimit-reset`, or a `Retry-After` delay in seconds where GitHub uses that instead).
+      if (res.headers.get('x-ratelimit-remaining') === '0') {
+        throw new GitHubError('rate-limited', rateLimitResetAt(res));
+      }
+      // Any other 403 — notably a fine-grained PAT whose scope or per-resource access is denied,
+      // which arrives WITH quota remaining — is an authorization failure, not a rate limit.
+      throw new GitHubError('unauthorized');
     }
     if (res.status === 404) throw new GitHubError('not-found');
     throw new Error(`github request failed: ${res.status}`);

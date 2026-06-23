@@ -83,6 +83,20 @@ describe('PAT GitHub provider (github-repos)', () => {
     }
   });
 
+  it('maps a non-rate-limit 403 (fine-grained PAT scope/resource denial, quota remaining) to unauthorized', async () => {
+    try {
+      await provider({ fail: { status: 403, forbidden: true } }).listResources();
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(GitHubError);
+      // A 403 that still has quota is an authorization failure, NOT a rate limit.
+      expect((err as GitHubError).kind).toBe('unauthorized');
+      expect((err as GitHubError).resetAt).toBeUndefined();
+      // The GitHub error body is never read or surfaced.
+      expect((err as GitHubError).message).not.toContain('fake-github-error');
+    }
+  });
+
   it('maps 404 to a typed not-found error with no GitHub body', async () => {
     try {
       await provider({ fail: { status: 404 } }).listResources();
