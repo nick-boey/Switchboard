@@ -1,0 +1,53 @@
+// worktree-management — PLANNED architecture overlay (docs-migration.md row 2).
+//
+// Extends the base container `Switchboard.Api` — specifically its Git service (introduced by the
+// repo-clone-browse overlay) — with the worktree create / list / delete operations and their
+// `worktree`-typed use of the operation ledger. Every addition is tagged `#todo` so it reads as
+// planned-but-not-yet-built; view ids are prefixed `worktree-management-*`.
+//
+// The `component` element kind and the `todo` tag are already declared by the repo-clone-browse
+// overlay's specification (the LikeC4 project merges all `.c4` files), so this file adds no
+// specification block — it reuses them and references the `gitService`, `operationLedger`, and
+// `credentialHelper` components that overlay defines.
+
+model {
+
+  extend Switchboard.Api {
+
+    worktreeService = component 'Worktree Service' {
+      #todo
+      description 'Extends the Git service with worktree create/list/delete at repos/<owner>/<repo>/worktrees/<wt-id> on the canonical path-safe id scheme (slug--hash). Distinguishes an existing-remote branch from a new branch, derives per-worktree git status (the git lamp), enforces a server-side safe-to-delete re-check, and performs mandatory create-time collision detect-and-reject.'
+      technology 'git CLI, child_process'
+    }
+
+    // Reuses the bare clone repo-clone-browse landed (bareDir / completion marker).
+    worktreeService -> gitService 'Operates inside the existing bare clone (bareDir, completion marker)' {
+      #todo
+    }
+
+    // Worktree creation is a `worktree`-typed tracked operation, with a second per-<repo-id> lock
+    // serializing git-mutating worktree add/remove against the shared bare repo.
+    worktreeService -> operationLedger 'Runs each create as a worktree-typed tracked operation; serializes git mutations under a per-repo lock' {
+      #todo
+    }
+
+    // An existing-remote create fetches via the reused credential helper (PAT never in argv/URL).
+    worktreeService -> credentialHelper 'Supplies the PAT for an existing-remote fetch over the git credential protocol' {
+      #todo
+    }
+
+    // The existing-remote fetch reaches GitHub over HTTPS.
+    worktreeService -> GitHub 'Fetches an existing remote branch over HTTPS' {
+      #todo
+    }
+  }
+}
+
+views {
+
+  view worktree-management-api of Switchboard.Api {
+    title 'worktree-management — API components (planned)'
+
+    include *
+  }
+}

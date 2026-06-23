@@ -37,6 +37,19 @@ LikeC4 overlay `docs/dev/Architecture/Planned/worktree-management.c4` (view ids 
 `worktree-management-*`) is **authored during this change's full planning stage** — deferred
 here as a roadmap scaffold.
 
+**Authored overlay (implemented, `likec4 validate` green):**
+
+- Added element id (under `Switchboard.Api`, all `#todo`): `Switchboard.Api.worktreeService`
+  ("Worktree Service") — extends the Git service with worktree create/list/delete on the
+  canonical `slug--hash` id scheme, existing-remote vs new branch, git-derived status, the
+  server-side safe-to-delete re-check, and create-time collision detect-and-reject.
+- Added relationships (all `#todo`): `worktreeService -> gitService` (operates inside the existing
+  bare clone), `worktreeService -> operationLedger` (worktree-typed tracked op + per-repo
+  git-mutation lock), `worktreeService -> credentialHelper` (PAT for an existing-remote fetch),
+  `worktreeService -> GitHub` (fetches an existing remote branch over HTTPS).
+- Added view id: `worktree-management-api` ("worktree-management — API components (planned)").
+- Validated: `pnpm --dir site exec likec4 validate --no-layout ../docs/dev/Architecture` → Valid.
+
 ## Decisions
 
 Inherited from the programme page: on-disk layout `repos/<repo-id>/worktrees/<wt-id>`; no

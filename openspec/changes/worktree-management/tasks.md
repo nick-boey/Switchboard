@@ -134,7 +134,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 9. Architecture overlay (docs)
 
-- [ ] 9.1 Author `docs/dev/Architecture/Planned/worktree-management.c4` (`docs-migration.md` row 2):
+- [x] 9.1 Author `docs/dev/Architecture/Planned/worktree-management.c4` (`docs-migration.md` row 2):
       `extend` `Switchboard.Api` (its Git service) with the worktree create/list/delete operations
       and the `worktree`-typed operation-ledger usage, every addition tagged `#todo`, view ids
       prefixed `worktree-management-*`; validate with
