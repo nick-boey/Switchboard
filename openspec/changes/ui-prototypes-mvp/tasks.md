@@ -127,6 +127,7 @@ Resolver` (`--sb-*`), wired into `AppProviders`; embossed tokens removed; `Embos
 
 ## 9. Verify
 
-- [ ] 9.1 Run `just lint`, `just typecheck`, `just test`, and the production Storybook
+- [x] 9.1 Run `just lint`, `just typecheck`, `just test`, and the production Storybook
       visual-snapshot run; confirm the matured primitives appear as production (non-prototype)
-      stories and all new tests pass.
+      stories and all new tests pass. → lint 0, typecheck 0, node 86/86, Storybook test-runner
+      22/22 (9 suites); `ui-*` primitives are production stories, no prototype stories leak.
