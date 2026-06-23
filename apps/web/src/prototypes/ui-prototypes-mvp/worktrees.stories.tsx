@@ -465,9 +465,9 @@ function Legend() {
             <Text span fw={700}>
               Delete
             </Text>{' '}
-            — red square on the right of the indicator row removes the worktree. It lights up bright
+            — red square on the right of the indicator row. Visual sketch only: it lights up bright
             red once the worktree is idle and its PR is merged (safe to remove); otherwise it sits
-            back as a darker red.
+            back as a darker red. Deletion behaviour is deferred to worktree-management.
           </Text>
           <Text fz="sm">
             <Text span fw={700}>

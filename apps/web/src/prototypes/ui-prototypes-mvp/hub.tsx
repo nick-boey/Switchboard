@@ -51,7 +51,7 @@ import {
  *   Plug (inactive/neutral)    → START `claude --remote-control` on the worktree (no modal)
  *   Git light                  → opens IndicatorActionModal (deferred: pull/push/…)
  *   PR light                   → opens IndicatorActionModal (deferred: open PR / merge / …)
- *   Delete (trash)             → delete the worktree
+ *   Delete (trash)             → delete control (visual sketch; behaviour deferred to worktree-management)
  *   Add worktree (empty row)   → opens CreateWorktreeModal (pick base branch → create, Claude stays off)
  */
 

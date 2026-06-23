@@ -5,6 +5,15 @@
 > strategy's single lightweight upfront prototype change; feature changes 3–5 later refine
 > their own slice of these prototypes.
 
+> **Superseded in part by the confirmation gate (2026-06-22) — `design.md` is authoritative.**
+> This file is kept as the historical statement of intent. Where it differs from `design.md` /
+> `prototypes.md`: the three-equal-screens framing became a single **worktrees hub** (repos →
+> worktrees with a per-worktree plug); the standalone **session-list screen and the
+> launch→Claude-app handoff toast were dropped** (the plug is the session affordance); the
+> git/PR status lamps are **display-only** for the MVP; and the design-language portion
+> **promotes production theme + primitives** inside `apps/web` (it is not prototype-only). See
+> Decisions 1 and 7 below, annotated.
+
 ## Problem
 
 The MVP user story is a single flow done from a phone: **browse GitHub repos → clone one →
@@ -17,11 +26,15 @@ tangible and cheap to change.
 
 ## Architecture summary
 
-All work lives in the **`Switchboard.WebSPA`** container as **quarantined Storybook
-prototypes** under `apps/web/src/prototypes/ui-prototypes-mvp/` — excluded from the production
-build, visual-snapshot run, unit run, autodocs, package exports, and app imports (foundations
-Decision 7). Nothing here touches `Switchboard.Api` or any production code path, so there is
-**no production architecture change**.
+The **screen sketches** live in the **`Switchboard.WebSPA`** container as **quarantined
+Storybook prototypes** under `apps/web/src/prototypes/ui-prototypes-mvp/` — excluded from the
+production build, visual-snapshot run, unit run, autodocs, package exports, and app imports
+(foundations Decision 7). The **design-language portion**, however, **promotes production
+theme tokens + primitives** inside `apps/web` (re-treating `theme.ts` and the
+`AppShell`/`EmbossedPanel`/`JackButton` primitives from embossed to flat — see `design.md`).
+Nothing here touches `Switchboard.Api`, `packages/shared`, or the LikeC4 model, so there is
+**no backend / shared / architecture (LikeC4) impact** — but there *is* production
+`apps/web` design-system code.
 
 The prototypes build on the existing retro theme (`src/theme/theme.ts`: bakelite/patina/brass/
 signal palettes, emboss + jack tokens, geometric type) and primitives (`AppShell`,
@@ -50,6 +63,11 @@ They are organised as:
               + DESIGN-LANGUAGE gallery (tokens → primitives → states)
 ```
 
+> _Gate note:_ the three equal screens above were re-centred on a **worktrees hub** and screen 3
+> (Sessions) was retired into the per-worktree **plug**. The screens that shipped are
+> `worktrees`, `new-repository`, and `settings` (see `prototypes.md`). The diagram is retained
+> as the original framing.
+
 ## Plan page
 
 [docs/plans/switchboard/mvp.md](../../../docs/plans/switchboard/mvp.md) — the programme page
@@ -59,10 +77,12 @@ prototyping strategy across all MVP changes. No separate plans page is warranted
 
 ## Planned architecture
 
-**None — no architectural impact.** The prototypes are quarantined Storybook sketches inside
-`Switchboard.WebSPA`; they introduce no new elements, relationships, or production code, so
-there is no `docs/dev/Architecture/Planned/ui-prototypes-mvp.c4` overlay and the Architecture
-review checkpoint does not apply to this change.
+**None — no architectural impact.** The work is confined to the `Switchboard.WebSPA`
+container: quarantined Storybook screen sketches plus the production `apps/web` design-system
+re-treatment (theme tokens + primitives). It introduces no new architectural elements or
+relationships and touches no backend (`Switchboard.Api`), shared, or LikeC4 surface, so there
+is no `docs/dev/Architecture/Planned/ui-prototypes-mvp.c4` overlay and the Architecture review
+checkpoint does not apply to this change.
 
 ## Decisions
 
@@ -70,6 +90,9 @@ review checkpoint does not apply to this change.
    worktree list/create, and session list/launch screens are the confirmation gate. The
    design-language gallery is a deliberate output because `theme.ts` reserves the "full visual
    treatment" for this change.
+   _[Superseded by the gate — see top note]:_ the screens were re-centred on a single
+   **worktrees hub** and the session-list screen was folded into the per-worktree plug; the
+   design-language gallery shipped as the `design-language` story and is matured into production.
 2. **Setup / auth is NOT prototyped.** The GitHub PAT and bearer token are written to
    `~/.switchboard` out-of-band by the CLI (`runtime-cli-docker`); an in-app settings/onboarding
    surface is out of scope for the MVP gate (see Open questions).
@@ -92,6 +115,9 @@ review checkpoint does not apply to this change.
    shows a transient toast/notification telling the user to open the official Claude mobile app
    to drive the conversation — no deep link and no copyable session reference in the MVP. Keeps
    the screen simple and matches "conversation management stays in the mobile app."
+   _[Superseded by the gate — see top note]:_ this **launch handoff toast was dropped**. There is
+   no standalone Sessions screen; the per-worktree plug is the session affordance, and "history
+   stays in the Claude app" is conveyed on the Stop-session modal instead.
 8. **Documentation.** The design language is documented as the **living Storybook gallery**
    (gallery stories + `theme.ts`), not a separate docs page. The programme page's prototyping
    sections are trimmed (not deleted) at archive while sibling changes remain active. These seed
