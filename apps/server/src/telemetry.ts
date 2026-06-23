@@ -45,6 +45,11 @@ const KEY_BLOCKLIST: readonly RegExp[] = [
   /clone[._-]?url/i,
   /(?:remote|repo|repository|vcs|git)[._-]?url/i,
   /branch/i,
+  // worktree-management Decision 7: the `<wt-id>` slug can echo a branch, so the id, its slug,
+  // and worktree paths are masked outright (the branch is already covered above).
+  /worktree/i,
+  /\bwt[._-]?id\b/i,
+  /\bslug\b/i,
   /(?:^|[._-])refs?(?:$|[._-])/i,
   /arg(?:s|v)?\b/i,
   /command|cmdline/i,

@@ -82,7 +82,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 5. Safe-to-delete predicate & no-leak (apps/server)
 
-- [ ] 5.1 Write the failing tests for the **safe-to-delete** gate (group-1.2 seam fakes): the
+- [x] 5.1 Write the failing tests for the **safe-to-delete** gate (group-1.2 seam fakes): the
       predicate is `noActiveSession AND prMerged AND NOT dirty`; delete is **refused** (typed
       `not-safe`) for a dirty / session-active / not-merged worktree without `force`, **allowed**
       with `force`, and the seams **degrade safely** (default: no session, PR unmerged) so a
@@ -91,11 +91,11 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
       a worktree with **no merged PR (incl. no PR at all) is not auto-safe**, and **every MVP
       deletion is confirmation-gated** via `force` — the `force`/confirmation path removes **only
       the worktree checkout** (never the bare clone, siblings, or branch — cross-check group 3).
-- [ ] 5.2 Write the failing **no-leak** tests (reusing the no-leak/redaction harness): a worktree
+- [x] 5.2 Write the failing **no-leak** tests (reusing the no-leak/redaction harness): a worktree
       create/list/delete emits **no branch name, no `<wt-id>`/slug, no absolute path, no command
       args** in telemetry/logs, and the credential helper used for an existing-remote fetch never
       leaks the PAT.
-- [ ] 5.3 Implement the server-side safe-to-delete guard (re-check before removal) and the
+- [x] 5.3 Implement the server-side safe-to-delete guard (re-check before removal) and the
       redaction-safe worktree spans (sensitive values under blocklisted keys) to green.
 
 ## 6. API routes, typed client & contract (apps/server)

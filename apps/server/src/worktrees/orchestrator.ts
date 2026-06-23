@@ -17,12 +17,14 @@ import {
   type ProcessProbe,
 } from '../operations/index.js';
 import type { GitRunner } from '../repos/git-runner.js';
-import { WorktreeCollisionError } from './errors.js';
+import { WorktreeCollisionError, WorktreeNotSafeError } from './errors.js';
 import {
   createWorktreeService,
   type WorktreeCreateInput,
   type WorktreeService,
 } from './git-worktree.js';
+import { safeToDelete } from './safe-to-delete.js';
+import { noPrStatusProbe, noSessionProbe, type PrStatusProbe, type SessionProbe } from './seams.js';
 
 /**
  * Worktree-creation-through-ledger orchestration (design Decision 3 + worktree-management
@@ -44,8 +46,13 @@ export interface WorktreeOrchestrator {
   abortCreate(repoId: string, wtId: string): Promise<OperationStatus | null>;
   getStatus(repoId: string, wtId: string): Promise<OperationStatus | null>;
   listWorktrees(target: RepoTarget): Promise<WorktreeSummary[]>;
-  /** Remove a worktree under the per-repo git-mutation lock (the guard lives in the route). */
-  removeWorktree(target: RepoTarget, wtId: string): Promise<void>;
+  /**
+   * Delete a worktree, gated by a server-side re-check of the safe-to-delete predicate. Refuses
+   * (typed `not-safe`) when the worktree is not safe and no `force` is supplied; runs the removal
+   * under the per-repo git-mutation lock. Removes ONLY the checkout (never the bare clone,
+   * siblings, or the branch — enforced in the Git service).
+   */
+  deleteWorktree(target: RepoTarget, wtId: string, options?: { force?: boolean }): Promise<void>;
   reconcile(): Promise<void>;
   whenSettled(repoId: string, wtId: string): Promise<OperationStatus | null>;
 }
@@ -59,6 +66,10 @@ export interface WorktreeOrchestratorDeps {
   repoLock?: KeyedLock;
   /** Injectable to force a truncated-hash collision in tests. */
   idForBranch?: (branch: string) => string;
+  /** Session-liveness seam (claude-session-launch wires it; defaults to "no active session"). */
+  sessionProbe?: SessionProbe;
+  /** PR-status seam (no MVP source; defaults to "not merged" → auto-safe path dormant). */
+  prStatusProbe?: PrStatusProbe;
 }
 
 const STATE_TO_STATUS: Record<OperationRecord['state'], OperationStatus['status']> = {
@@ -93,6 +104,8 @@ export function createWorktreeOrchestrator(
   const worktreeService =
     deps.worktreeService ?? createWorktreeService(ctx, { runner: deps.runner });
   const idForBranch = deps.idForBranch ?? defaultIdForBranch;
+  const sessionProbe = deps.sessionProbe ?? noSessionProbe;
+  const prStatusProbe = deps.prStatusProbe ?? noPrStatusProbe;
   // The per-`<repo-id>` git-mutation lock — independent of the ledger's per-operation-key lock.
   const repoLock = deps.repoLock ?? createKeyedLock();
 
@@ -157,8 +170,21 @@ export function createWorktreeOrchestrator(
 
     listWorktrees: (target) => worktreeService.listWorktrees(target),
 
-    removeWorktree: (target, wtId) =>
-      repoLock.run(toRepoId(target), () => worktreeService.removeWorktree(target, wtId)),
+    async deleteWorktree(target, wtId, options = {}) {
+      const repoId = toRepoId(target);
+      if (!options.force) {
+        // Re-check the safe-to-delete predicate server-side (Decision 6). `dirty` is this change's
+        // git status; the session/PR inputs come through the degrade-safe seams.
+        const summary = (await worktreeService.listWorktrees(target)).find((w) => w.wtId === wtId);
+        const inputs = {
+          dirty: summary?.dirty ?? false,
+          hasActiveSession: await sessionProbe.hasActiveSession(repoId, wtId),
+          prMerged: await prStatusProbe.isPrMerged(repoId, wtId),
+        };
+        if (!safeToDelete(inputs)) throw new WorktreeNotSafeError();
+      }
+      await repoLock.run(repoId, () => worktreeService.removeWorktree(target, wtId));
+    },
 
     reconcile: () => ledger.reconcile(),
 

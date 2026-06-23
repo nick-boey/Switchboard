@@ -4,6 +4,7 @@ import {
   idForBranch as defaultIdForBranch,
   isSafeBranchName,
   isValidWorktreeId,
+  toRepoId,
   type RepoTarget,
   type RuntimeContext,
   type WorktreeMode,
@@ -199,6 +200,17 @@ export function createWorktreeService(
       const path = worktreePath(target, wtId);
       mkdirSync(dirname(path), { recursive: true });
 
+      // Telemetry (Decision 7): sensitive values go under blocklisted keys so the redactor masks
+      // them; the branch, `<wt-id>`/slug, and absolute path are never plain attributes.
+      ctx.telemetry
+        .startSpan('worktree.create', {
+          repoId: toRepoId(target),
+          branch,
+          'worktree.id': wtId,
+          'worktree.path': path,
+        })
+        .end();
+
       if (mode === 'new') {
         if (await refExists(bare, `refs/heads/${branch}`)) throw new WorktreeError('branch-exists');
         const base = input.base ?? (await defaultBranch(bare));
@@ -272,12 +284,20 @@ export function createWorktreeService(
           sync,
         });
       }
+      ctx.telemetry.startSpan('worktree.list', { repoId: toRepoId(target) }).end();
       return summaries;
     },
 
     async removeWorktree(target, wtId) {
       const bare = gitService.bareDir(target);
       const path = worktreePath(target, wtId);
+      ctx.telemetry
+        .startSpan('worktree.delete', {
+          repoId: toRepoId(target),
+          'worktree.id': wtId,
+          'worktree.path': path,
+        })
+        .end();
       // Remove ONLY the checkout: never the bare clone, a sibling, or the git branch.
       await probe(['--git-dir', bare, 'worktree', 'remove', '--force', path]);
       await probe(['--git-dir', bare, 'worktree', 'prune']);
