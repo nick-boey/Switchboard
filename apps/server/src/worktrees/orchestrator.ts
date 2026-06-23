@@ -142,12 +142,12 @@ export function createWorktreeOrchestrator(
         metadata: { branch: input.branch },
         run: ({ signal, setPid }) =>
           // git mutations to the shared bare repo serialize under the per-repo lock.
-          repoLock.run(repoId, () =>
-            worktreeService.createWorktree(input, {
+          repoLock.run(repoId, async () => {
+            await worktreeService.createWorktree(input, {
               signal,
               onSpawn: (pid) => void setPid(pid),
-            }),
-          ),
+            });
+          }),
       });
 
       // Idempotent reuse gates on branch equality FIRST: a same-key op recorded for a DIFFERENT

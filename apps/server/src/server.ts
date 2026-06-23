@@ -4,6 +4,7 @@ import type { RuntimeContext, ServerHandle } from '@switchboard/shared';
 import { createApp, type CreateAppOptions } from './app.js';
 import { createTelemetry } from './telemetry.js';
 import { createCloneOrchestrator } from './repos/index.js';
+import { createWorktreeOrchestrator } from './worktrees/orchestrator.js';
 import { listGitHubRepos } from './github/index.js';
 
 /** Loopback-only bind (design Decision 3): `tailscale serve` is the exclusive ingress. */
@@ -26,10 +27,14 @@ export async function start(
 ): Promise<ServerHandle> {
   const telemetry = createTelemetry(ctx.config);
   const orchestrator = options.repos?.orchestrator ?? createCloneOrchestrator(ctx);
+  const worktrees = options.worktrees?.orchestrator ?? createWorktreeOrchestrator(ctx);
+  // Restart recovery for both orchestrators (each reconciles only the records it owns).
   await orchestrator.reconcile();
+  await worktrees.reconcile();
   const app = createApp(ctx, {
     tracer: telemetry.tracer,
     repos: { orchestrator, listGitHub: options.repos?.listGitHub ?? (() => listGitHubRepos(ctx)) },
+    worktrees: { orchestrator: worktrees },
   });
 
   const server = await new Promise<ServerType>((resolve) => {

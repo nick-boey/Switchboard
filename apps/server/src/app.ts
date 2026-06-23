@@ -6,7 +6,11 @@ import {
   abortRequestSchema,
   cloneRequestSchema,
   isValidRepoId,
+  isValidWorktreeId,
+  parseRepoTarget,
   toRepoId,
+  worktreeCreateRequestSchema,
+  worktreeDeleteRequestSchema,
   type RepoListResponse,
   type RuntimeContext,
   type RuntimeIdentity,
@@ -14,6 +18,8 @@ import {
 import { authMiddleware, corsMiddleware } from './auth.js';
 import { telemetryMiddleware } from './telemetry.js';
 import { createCloneOrchestrator, type CloneOrchestrator } from './repos/index.js';
+import { createWorktreeOrchestrator, type WorktreeOrchestrator } from './worktrees/orchestrator.js';
+import { WorktreeNotSafeError } from './worktrees/errors.js';
 import { listGitHubRepos } from './github/index.js';
 
 /** Injected slice dependencies (tests supply fakes; `start`/`createApp` build real ones). */
@@ -22,10 +28,16 @@ export interface RepoDeps {
   listGitHub?: () => Promise<RepoListResponse>;
 }
 
+/** Injected worktree-slice dependencies. */
+export interface WorktreeDeps {
+  orchestrator?: WorktreeOrchestrator;
+}
+
 /** Optional wiring for `createApp` — tests inject a tracer; `start` supplies one from config. */
 export interface CreateAppOptions {
   tracer?: Tracer;
   repos?: RepoDeps;
+  worktrees?: WorktreeDeps;
 }
 
 /** Hono environment: the auth gate publishes the admitted identity for handlers. */
@@ -42,6 +54,18 @@ const echoSchema = z.object({ message: z.string().min(1) });
 const statusParamSchema = z
   .object({ owner: z.string(), repo: z.string() })
   .refine((v) => isValidRepoId(`${v.owner}/${v.repo}`), { message: 'invalid repo-id' });
+
+/** Worktree list param: a safe `<owner>/<repo>` repo-id. */
+const worktreeRepoParamSchema = z
+  .object({ owner: z.string(), repo: z.string() })
+  .refine((v) => isValidRepoId(`${v.owner}/${v.repo}`), { message: 'invalid repo-id' });
+
+/** Worktree status param: a safe `<owner>/<repo>` repo-id + a path-safe `<wt-id>`. */
+const worktreeStatusParamSchema = z
+  .object({ owner: z.string(), repo: z.string(), wtId: z.string() })
+  .refine((v) => isValidRepoId(`${v.owner}/${v.repo}`) && isValidWorktreeId(v.wtId), {
+    message: 'invalid worktree id',
+  });
 
 /** Shared Zod-validation failure handler — reject with `422` BEFORE the handler runs. */
 function onInvalid(
@@ -66,6 +90,7 @@ export function createApp(ctx: RuntimeContext, options: CreateAppOptions = {}) {
   const app = new Hono<AppEnv>();
 
   const orchestrator = options.repos?.orchestrator ?? createCloneOrchestrator(ctx);
+  const worktrees = options.worktrees?.orchestrator ?? createWorktreeOrchestrator(ctx);
   const listGitHub = options.repos?.listGitHub ?? (() => listGitHubRepos(ctx));
 
   // OTel instrumentation (design Decision 5): one semconv span per request. The redacting
@@ -124,6 +149,56 @@ export function createApp(ctx: RuntimeContext, options: CreateAppOptions = {}) {
         const status = await orchestrator.getStatus(repoId);
         if (status) return c.json(status, 200);
         return c.json({ error: 'not-found' as const, repoId }, 404);
+      },
+    )
+    // Create a worktree as a tracked operation; returns immediately in an in-progress state.
+    .post(
+      '/worktrees/create',
+      zValidator('json', worktreeCreateRequestSchema, onInvalid),
+      async (c) => {
+        const { repoId, branch, mode, base } = c.req.valid('json');
+        const target = parseRepoTarget(repoId)!; // validated by the schema's isValidRepoId refine
+        const status = await worktrees.startCreate({ target, branch, mode, base });
+        return c.json(status, 200);
+      },
+    )
+    // Delete a worktree, gated by the server-side safe-to-delete re-check (typed not-safe refusal).
+    .post(
+      '/worktrees/delete',
+      zValidator('json', worktreeDeleteRequestSchema, onInvalid),
+      async (c) => {
+        const { repoId, wtId, force } = c.req.valid('json');
+        const target = parseRepoTarget(repoId)!;
+        try {
+          await worktrees.deleteWorktree(target, wtId, { force });
+          return c.json({ status: 'deleted' as const }, 200);
+        } catch (err) {
+          if (err instanceof WorktreeNotSafeError)
+            return c.json({ status: 'not-safe' as const }, 200);
+          throw err;
+        }
+      },
+    )
+    // List a repository's worktrees (git-derived, with the git lamp's status).
+    .get(
+      '/worktrees/:owner/:repo',
+      zValidator('param', worktreeRepoParamSchema, onInvalid),
+      async (c) => {
+        const { owner, repo } = c.req.valid('param');
+        const worktreesList = await worktrees.listWorktrees({ owner, repo });
+        return c.json({ repoId: toRepoId({ owner, repo }), worktrees: worktreesList }, 200);
+      },
+    )
+    // The worktree-create operation status (the create-progress poll target).
+    .get(
+      '/worktrees/:owner/:repo/:wtId/status',
+      zValidator('param', worktreeStatusParamSchema, onInvalid),
+      async (c) => {
+        const { owner, repo, wtId } = c.req.valid('param');
+        const repoId = toRepoId({ owner, repo });
+        const status = await worktrees.getStatus(repoId, wtId);
+        if (status) return c.json(status, 200);
+        return c.json({ error: 'not-found' as const, repoId, wtId }, 404);
       },
     );
 

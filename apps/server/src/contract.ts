@@ -1,5 +1,11 @@
 import type { InferRequestType, InferResponseType } from 'hono/client';
-import type { OperationStatus, RepoListResponse, RepoTarget } from '@switchboard/shared';
+import type {
+  OperationStatus,
+  RepoListResponse,
+  RepoTarget,
+  WorktreeListResponse,
+  WorktreeMode,
+} from '@switchboard/shared';
 import type { ServerClient } from './client.js';
 
 /**
@@ -59,4 +65,37 @@ export type _ClonedResponseContract = Expect<
 >;
 export type _GithubResponseContract = Expect<
   Equal<InferResponseType<GithubGet, 200>, RepoListResponse>
+>;
+
+// --- worktree-management routes (design Decision 8) -------------------------
+// The typed client mirrors every worktree route; drift from the shared schemas fails the build.
+
+type WtCreatePost = ServerClient['worktrees']['create']['$post'];
+type WtDeletePost = ServerClient['worktrees']['delete']['$post'];
+type WtListGet = ServerClient['worktrees'][':owner'][':repo']['$get'];
+type WtStatusGet = ServerClient['worktrees'][':owner'][':repo'][':wtId']['status']['$get'];
+
+// The create request is the shared schema's shape (no transform): `{ repoId, branch, mode, base? }`.
+export type _WtCreateRequestContract = Expect<
+  Equal<
+    InferRequestType<WtCreatePost>['json'],
+    { repoId: string; branch: string; mode: WorktreeMode; base?: string }
+  >
+>;
+export type _WtDeleteRequestContract = Expect<
+  Equal<InferRequestType<WtDeletePost>['json'], { repoId: string; wtId: string; force?: boolean }>
+>;
+
+// Create returns the shared operation status; delete reports a typed deleted/not-safe outcome.
+export type _WtCreateResponseContract = Expect<
+  Equal<InferResponseType<WtCreatePost, 200>, OperationStatus>
+>;
+export type _WtDeleteResponseContract = Expect<
+  Equal<InferResponseType<WtDeletePost, 200>, { status: 'deleted' } | { status: 'not-safe' }>
+>;
+export type _WtStatusResponseContract = Expect<
+  Equal<InferResponseType<WtStatusGet, 200>, OperationStatus>
+>;
+export type _WtListResponseContract = Expect<
+  Equal<InferResponseType<WtListGet, 200>, WorktreeListResponse>
 >;

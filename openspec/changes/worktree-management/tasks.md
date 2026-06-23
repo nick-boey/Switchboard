@@ -100,11 +100,11 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 6. API routes, typed client & contract (apps/server)
 
-- [ ] 6.1 Write the failing tests: the worktree **create**, **list**, **delete**, and **status**
+- [x] 6.1 Write the failing tests: the worktree **create**, **list**, **delete**, and **status**
       routes validate input with Zod (invalid input → `422`, handler not invoked); delete reports
       the typed `not-safe` refusal vs success; and the typed client mirrors every route so schema
       drift fails the **contract** test.
-- [ ] 6.2 Wire the worktree routes into the Hono app and extend the typed client/contract to green.
+- [x] 6.2 Wire the worktree routes into the Hono app and extend the typed client/contract to green.
 
 ## 7. Web UI — worktrees-hub worktree slice (apps/web)
 
