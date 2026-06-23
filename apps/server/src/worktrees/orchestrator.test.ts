@@ -46,6 +46,10 @@ interface FakeWt {
   runs: number;
   maxConcurrent: number;
   pending: Map<string, Deferred>;
+  /** Op-scoped ownership token passed to each createWorktree (threaded from op metadata). */
+  createTokens: (string | undefined)[];
+  /** Expected ownership token passed to each removeWorktreeIfIncomplete (cleanup path). */
+  cleanupTokens: (string | undefined)[];
 }
 
 /** A fake worktree service whose createWorktree blocks on a per-wtId deferred. */
@@ -57,6 +61,8 @@ function makeFakeWt(idForBranch: (b: string) => string): FakeWt {
     runs: 0,
     maxConcurrent: 0,
     pending: new Map(),
+    createTokens: [],
+    cleanupTokens: [],
     service: undefined as unknown as WorktreeService,
   };
   state.service = {
@@ -64,6 +70,7 @@ function makeFakeWt(idForBranch: (b: string) => string): FakeWt {
     async createWorktree(input: WorktreeCreateInput, options): Promise<WorktreeCreateResult> {
       const wtId = idForBranch(input.branch);
       state.runs += 1;
+      state.createTokens.push(options?.token);
       active += 1;
       state.maxConcurrent = Math.max(state.maxConcurrent, active);
       const d = deferred();
@@ -84,7 +91,8 @@ function makeFakeWt(idForBranch: (b: string) => string): FakeWt {
     async removeWorktree(_t, wtId) {
       state.completed.delete(wtId);
     },
-    async removeWorktreeIfIncomplete(_t, wtId) {
+    async removeWorktreeIfIncomplete(_t, wtId, expectedToken) {
+      state.cleanupTokens.push(expectedToken);
       if (!state.completed.has(wtId)) state.cleaned.push(wtId);
     },
     async isWorktreeComplete(_t, wtId) {
@@ -185,6 +193,24 @@ describe('worktree orchestrator (ledger + per-repo lock)', () => {
     fake.pending.get(idB)?.resolve();
     await orch.whenSettled('acme/infra', idB);
     expect(fake.completed.size).toBe(2);
+  });
+
+  it('threads a unique op-scoped ownership token from create metadata into cleanup', async () => {
+    const orch = orchestrator();
+    const wtId = idForBranch('feature/x');
+    await orch.startCreate(create('feature/x'));
+
+    // The create attempt received a non-empty op-scoped token (this op's ownership claim).
+    const createToken = fake.createTokens.at(-1);
+    expect(typeof createToken).toBe('string');
+    expect(createToken).toBeTruthy();
+
+    // Abort → failure-cleanup receives the SAME token (threaded from the op's durable metadata),
+    // so cleanup can only delete a destination this exact operation provably created.
+    const aborted = await orch.abortCreate('acme/infra', wtId);
+    expect(aborted?.status).toBe('aborted');
+    expect(fake.cleanupTokens).toContain(createToken);
+    await orch.whenSettled('acme/infra', wtId);
   });
 
   it('abort cancels and cleans a partial worktree', async () => {

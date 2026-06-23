@@ -118,9 +118,23 @@ the idempotent path, not a collision.
   user's data or a directory left by an earlier attempt the operation did not claim)
 - **THEN** the create fails with a typed error without claiming ownership of that path, and the
   failure-cleanup path leaves the pre-existing directory and its contents intact — cleanup MUST
-  only remove a destination this operation provably created (claimed via an ownership marker before
-  any filesystem mutation), so it never deletes a path it did not create, while a genuine partial
+  only remove a destination this operation provably created (claimed via an **operation-scoped**
+  ownership marker — a per-operation token written as the marker's content before any filesystem
+  mutation — where cleanup removes the destination only when the marker's token equals the failed
+  operation's own token), so it never deletes a path it did not create, while a genuine partial
   worktree this operation did create is still removed and a completed worktree is never removed
+
+#### Scenario: A stale or foreign ownership marker never authorizes deleting another operation's or a user's data
+
+- **WHEN** a worktree create targets a `<wt-id>` path beside which an ownership marker left by a
+  **different** operation is present (its recorded token does not match this operation's token —
+  e.g. a marker left behind by the conservative no-pid reconcile while the path was absent), and the
+  path now holds a normal directory this operation did not create
+- **THEN** the create fails with the typed `dest-exists` error without claiming the path, and the
+  failure-cleanup for this operation — which removes a destination only when the marker's token
+  matches this operation's own token — leaves the foreign-marked directory and its contents intact,
+  so a stale or foreign marker can never re-authorize deleting another operation's or a user's data
+  (each create attempt, including a retry, carries a fresh unique token)
 
 ### Requirement: Worktree creation runs as a tracked, serialized, recoverable operation
 

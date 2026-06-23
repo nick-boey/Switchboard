@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import {
   idForBranch as defaultIdForBranch,
@@ -48,8 +49,17 @@ export interface WorktreeService {
   ): Promise<WorktreeCreateResult>;
   listWorktrees(target: RepoTarget): Promise<WorktreeSummary[]>;
   removeWorktree(target: RepoTarget, wtId: string): Promise<void>;
-  /** Cleanup seam for the ledger: remove a worktree only when it is NOT a completed checkout. */
-  removeWorktreeIfIncomplete(target: RepoTarget, wtId: string): Promise<void>;
+  /**
+   * Cleanup seam for the ledger: remove a worktree only when it is NOT a completed checkout AND the
+   * destination is provably owned by THIS operation — i.e. an ownership marker exists whose token
+   * equals `expectedToken` (the failed operation's own token, from its metadata). A path with a
+   * missing, stale, or foreign marker (or when no token is supplied) is left untouched.
+   */
+  removeWorktreeIfIncomplete(
+    target: RepoTarget,
+    wtId: string,
+    expectedToken?: string,
+  ): Promise<void>;
   /** True once the worktree exists on disk AND git reports it (the ledger's `isComplete`). */
   isWorktreeComplete(target: RepoTarget, wtId: string): Promise<boolean>;
   /** Absolute path to a worktree (derived only from a re-validated id). */
@@ -60,6 +70,14 @@ export interface WorktreeRunOptions {
   signal?: AbortSignal;
   /** May return a promise; the runner awaits it so the pid is persisted before the process exit. */
   onSpawn?(pid: number): void | Promise<void>;
+  /**
+   * Operation-scoped ownership token — this attempt's unique claim on the destination path. It is
+   * written verbatim as the ownership marker's content BEFORE any filesystem mutation, and threaded
+   * (via the operation's metadata) into the cleanup path so that ONLY this exact operation's partial
+   * is removable. A retry is a new operation with a new token, so a stale marker can never authorize
+   * deleting another operation's or a user's data. Defaults to a fresh `randomUUID()` when omitted.
+   */
+  token?: string;
 }
 
 export interface WorktreeServiceDeps {
@@ -120,11 +138,19 @@ export function createWorktreeService(
     return join(worktreesRoot(t), wtId);
   };
   // Ownership marker: a sibling file written just before THIS operation mutates the destination,
-  // and removed only on success. Its presence is proof that the directory at `worktreePath` was
-  // created by an in-flight/failed create of ours — the ONLY paths failure-cleanup may delete.
-  // A path that exists without this marker is pre-existing user data and is never touched.
+  // and removed only on success. Its CONTENT is the operation's unique token, so ownership is
+  // OPERATION-SCOPED: a marker proves the directory at `worktreePath` was created by THIS exact
+  // attempt only when its token matches. A path that exists with a missing/stale/foreign marker is
+  // someone else's data (a different op's partial, or a user's dir) and failure-cleanup never deletes
+  // it. A retry is a new operation with a new token, so a stale marker can never re-authorize a delete.
   const pendingMarkerPath = (t: RepoTarget, wtId: string): string =>
     `${worktreePath(t, wtId)}.pending`;
+  /** The token recorded in the ownership marker, or `null` when no marker is present. */
+  const markerToken = (marker: string): string | null =>
+    existsSync(marker) ? readFileSync(marker, 'utf8') : null;
+  /** True only when an ownership marker exists AND its token equals THIS operation's expected token. */
+  const ownedBy = (marker: string, expectedToken: string | undefined): boolean =>
+    expectedToken !== undefined && markerToken(marker) === expectedToken;
 
   const git = async (args: string[], options: WorktreeRunOptions = {}): Promise<string> => {
     const result = await runner.capture(args, options);
@@ -185,6 +211,9 @@ export function createWorktreeService(
 
     async createWorktree(input, options = {}) {
       const { target, branch, mode } = input;
+      // This attempt's unique ownership token. The orchestrator generates it, stores it in the
+      // operation's metadata, and threads it here; a direct caller defaults to a fresh uuid.
+      const token = options.token ?? randomUUID();
       // 1. Reject an unsafe/empty branch before any path is built.
       if (!isSafeBranchName(branch)) throw new WorktreeError('git-failure', 'unsafe branch');
       // 2. Require a completed bare clone.
@@ -209,15 +238,18 @@ export function createWorktreeService(
       mkdirSync(dirname(path), { recursive: true });
 
       // 5. Destination-safety preflight (data-loss guard). The collision check above only sees
-      // git-registered worktrees; a NORMAL directory already at `path` is the user's data (a stray
-      // dir, or a prior partial attempt this op did not claim). Refuse with a typed error and do
-      // NOT write the ownership marker, so the failure-cleanup path will never delete it.
-      if (existsSync(path) && !existsSync(marker)) {
+      // git-registered worktrees; a NORMAL directory already at `path` is someone else's data (a
+      // stray dir, a user's dir, or a DIFFERENT operation's partial). Refuse unless an ownership
+      // marker proves THIS operation (matching token) already owns the path. A missing, stale, or
+      // foreign-token marker is never ours → refuse with a typed error and do NOT (re)claim it, so
+      // the failure-cleanup path will never delete it.
+      if (existsSync(path) && !ownedBy(marker, token)) {
         throw new WorktreeError('dest-exists', 'worktree destination already exists');
       }
-      // Claim ownership of `path` BEFORE any filesystem mutation, so a partial left by a crash/abort
-      // is provably ours and can be cleaned. Released on success (below); kept on failure for cleanup.
-      writeFileSync(marker, '');
+      // Claim ownership of `path` BEFORE any filesystem mutation: the marker's CONTENT is this op's
+      // token, so a partial left by a crash/abort is provably ours (and only ours) and can be
+      // cleaned. Released on success (below); kept on failure for the token-gated cleanup.
+      writeFileSync(marker, token);
 
       // Telemetry (Decision 7): sensitive values go under blocklisted keys so the redactor masks
       // them; the branch, `<wt-id>`/slug, and absolute path are never plain attributes.
@@ -333,16 +365,21 @@ export function createWorktreeService(
       return raw.some((wt) => !wt.bare && basename(wt.path) === wtId);
     },
 
-    async removeWorktreeIfIncomplete(target, wtId) {
+    async removeWorktreeIfIncomplete(target, wtId, expectedToken) {
       if (await service.isWorktreeComplete(target, wtId)) return;
       const path = worktreePath(target, wtId);
       const marker = pendingMarkerPath(target, wtId);
-      // Ownership proof. A directory that exists on disk but carries no ownership marker was NOT
-      // created by this operation (git also does not report it — `isWorktreeComplete` is false), so
-      // it is pre-existing user data. NEVER delete it. Only marked/owned (or absent) paths proceed.
-      if (existsSync(path) && !existsSync(marker)) return;
+      // Operation-scoped ownership proof. A directory that exists on disk is deletable ONLY when an
+      // ownership marker proves THIS operation created it: the marker's token must equal the failed
+      // op's own `expectedToken` (from its metadata). A path with a missing, stale, or foreign-token
+      // marker — or when no expected token is supplied — was NOT created by this operation (git also
+      // does not report it — `isWorktreeComplete` is false), so it is someone else's data. NEVER
+      // delete it. Only an owned (token-matching) or already-absent path proceeds.
+      const owned = ownedBy(marker, expectedToken);
+      if (existsSync(path) && !owned) return;
       await service.removeWorktree(target, wtId);
-      rmSync(marker, { force: true });
+      // Clear the marker only when it was ours (a non-matching marker belongs to another op).
+      if (owned) rmSync(marker, { force: true });
     },
   };
 

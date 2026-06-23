@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
   idForBranch as defaultIdForBranch,
@@ -121,9 +122,13 @@ export function createWorktreeOrchestrator(
         },
         cleanup: (record) => {
           const { target, repoId, wtId } = partsForKey(record.key);
+          // The failed operation's own ownership token (recorded in metadata at start). Threading it
+          // here is what makes cleanup operation-scoped: it may delete the destination ONLY when an
+          // ownership marker carries THIS exact token — never a path marked by a different op/user.
+          const expectedToken = record.metadata?.token;
           // Cleanup is a git mutation → serialize under the per-repo lock.
           return repoLock.run(repoId, () =>
-            worktreeService.removeWorktreeIfIncomplete(target, wtId),
+            worktreeService.removeWorktreeIfIncomplete(target, wtId, expectedToken),
           );
         },
       },
@@ -135,16 +140,24 @@ export function createWorktreeOrchestrator(
       const repoId = toRepoId(input.target);
       const wtId = idForBranch(input.branch);
       const key = opKey(repoId, wtId);
+      // This attempt's unique operation-scoped ownership token. It is recorded in the operation's
+      // durable metadata (below) AND threaded into createWorktree, which writes it as the ownership
+      // marker's content before any fs mutation. A retry (after a terminal op) is a NEW operation
+      // with a NEW token, so a stale marker can never match a later op and re-authorize a delete.
+      // On idempotent reuse the ledger keeps the in-flight op's original token; this fresh one is
+      // discarded along with the unused `run` closure.
+      const token = randomUUID();
 
       const op = await ledger.start({
         type: 'worktree',
         key,
-        metadata: { branch: input.branch },
+        metadata: { branch: input.branch, token },
         run: ({ signal, setPid }) =>
           // git mutations to the shared bare repo serialize under the per-repo lock.
           repoLock.run(repoId, async () => {
             await worktreeService.createWorktree(input, {
               signal,
+              token,
               // Await the durable pid persist before the runner awaits the git process (restart
               // recovery): reconcile treats a missing pid conservatively, so we shrink that window.
               onSpawn: (pid) => setPid(pid),

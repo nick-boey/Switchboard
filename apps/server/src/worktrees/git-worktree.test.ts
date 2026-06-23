@@ -193,7 +193,8 @@ describe('worktree Git service', () => {
 
   it('refuses to create over a pre-existing UNOWNED directory and never deletes it on cleanup', async () => {
     // Data-loss regression: a pre-existing NORMAL directory (a user's data, or a stray dir) sits
-    // at worktrees/<idForBranch(branch)>. It is NOT a git worktree and was NOT created by this op.
+    // at worktrees/<idForBranch(branch)>. It is NOT a git worktree and was NOT created by this op
+    // (no ownership marker at all).
     const branch = 'feature/pre-existing';
     const wtId = idForBranch(branch);
     const path = join(worktreesDir(fx.ctx, fx.target), wtId);
@@ -201,14 +202,15 @@ describe('worktree Git service', () => {
     const sentinel = join(path, 'precious.txt');
     writeFileSync(sentinel, 'do-not-delete');
 
-    // The create must FAIL because the destination already exists and is not ours — and it must
-    // NOT claim ownership of (mark) that path.
+    // The create must FAIL because the destination already exists and no marker proves THIS op
+    // (token-this) owns it — and it must NOT claim ownership of (mark) that path.
     await expect(
-      service.createWorktree({ target: fx.target, branch, mode: 'new' }),
-    ).rejects.toBeInstanceOf(WorktreeError);
+      service.createWorktree({ target: fx.target, branch, mode: 'new' }, { token: 'token-this' }),
+    ).rejects.toMatchObject({ kind: 'dest-exists' });
 
-    // Drive the exact failure-cleanup path the ledger runs on a failed/aborted op.
-    await service.removeWorktreeIfIncomplete(fx.target, wtId);
+    // Drive the exact failure-cleanup path the ledger runs on a failed/aborted op, with THIS op's
+    // expected token: an unmarked path is never ours, so cleanup must leave it untouched.
+    await service.removeWorktreeIfIncomplete(fx.target, wtId, 'token-this');
 
     // The pre-existing directory AND its sentinel survive: cleanup must NEVER delete a path this
     // operation did not create. (No ownership proof → leave it untouched.)
@@ -217,10 +219,40 @@ describe('worktree Git service', () => {
     expect(readFileSync(sentinel, 'utf8')).toBe('do-not-delete');
   });
 
-  it('still cleans up a partial worktree THIS operation created (ownership marker present)', async () => {
+  it('a STALE/foreign marker (another op token) never authorizes deleting user data at the path', async () => {
+    // The remaining data-loss path the op-scoped token closes: a marker carrying a DIFFERENT op's
+    // token (token-A) lingers beside the destination (e.g. left by the conservative no-pid
+    // reconcile while the path was absent). Later "someone else" creates a real directory + a
+    // sentinel at that path. A NEW create op with its OWN token (token-B, same branch / wt-id) must
+    // REFUSE (the marker does not prove token-B owns the path), and the failure-cleanup for op-B
+    // (expected token-B) must leave the foreign-marked user data fully intact.
+    const branch = 'feature/stale-marker';
+    const wtId = idForBranch(branch);
+    const path = join(worktreesDir(fx.ctx, fx.target), wtId);
+    const marker = `${path}.pending`;
+
+    mkdirSync(path, { recursive: true }); // creates worktrees/ parent too
+    const sentinel = join(path, 'precious.txt');
+    writeFileSync(sentinel, 'do-not-delete'); // someone else's data
+    writeFileSync(marker, 'token-A'); // a foreign/stale marker from a different operation
+
+    // A NEW create op with a DIFFERENT token → dest exists, marker is foreign → typed refusal.
+    await expect(
+      service.createWorktree({ target: fx.target, branch, mode: 'new' }, { token: 'token-B' }),
+    ).rejects.toMatchObject({ kind: 'dest-exists' });
+
+    // Failure-cleanup for op-B (expected token-B) must NOT delete a path marked by another op.
+    await service.removeWorktreeIfIncomplete(fx.target, wtId, 'token-B');
+
+    expect(existsSync(path)).toBe(true);
+    expect(existsSync(sentinel)).toBe(true);
+    expect(readFileSync(sentinel, 'utf8')).toBe('do-not-delete');
+  });
+
+  it('cleans up a partial THIS operation created only when given the matching op token', async () => {
     // A genuine partial owned by this op: wrap the real runner so `git worktree add` simulates git
     // creating the destination then failing mid-checkout. createWorktree writes its ownership
-    // marker BEFORE the mutation, so the leftover is provably ours.
+    // marker (CONTENT = this op's token) BEFORE the mutation, so the leftover is provably ours.
     const branch = 'feature/owned-partial';
     const wtId = idForBranch(branch);
     const path = join(worktreesDir(fx.ctx, fx.target), wtId);
@@ -239,14 +271,19 @@ describe('worktree Git service', () => {
     const svc = createWorktreeService(fx.ctx, { gitService: fx.gitService, runner });
 
     await expect(
-      svc.createWorktree({ target: fx.target, branch, mode: 'new' }),
+      svc.createWorktree({ target: fx.target, branch, mode: 'new' }, { token: 'token-A' }),
     ).rejects.toBeInstanceOf(WorktreeError);
-    // The failed op left an on-disk partial AND its ownership/pending marker.
+    // The failed op left an on-disk partial AND its ownership marker carrying THIS op's token.
+    expect(existsSync(path)).toBe(true);
+    expect(readFileSync(`${path}.pending`, 'utf8')).toBe('token-A');
+
+    // Cleanup with a NON-matching token must NOT delete the partial (it is not proven theirs).
+    await svc.removeWorktreeIfIncomplete(fx.target, wtId, 'token-WRONG');
     expect(existsSync(path)).toBe(true);
     expect(existsSync(`${path}.pending`)).toBe(true);
 
-    // Cleanup removes the owned partial and clears the marker (legitimate cleanup is intact).
-    await svc.removeWorktreeIfIncomplete(fx.target, wtId);
+    // Cleanup with the MATCHING expected token removes the owned partial and clears the marker.
+    await svc.removeWorktreeIfIncomplete(fx.target, wtId, 'token-A');
     expect(existsSync(path)).toBe(false);
     expect(existsSync(`${path}.pending`)).toBe(false);
   });
