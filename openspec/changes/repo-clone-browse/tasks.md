@@ -42,7 +42,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 3. Operation ledger + lock (apps/server)
 
-- [ ] 3.1 Write the failing tests for the shared subsystem (using the group-1.4 scaffolding):
+- [x] 3.1 Write the failing tests for the shared subsystem (using the group-1.4 scaffolding):
       a ledger record carries `{ id, type, key, state, startedAt, finishedAt, error? }`;
       a duplicate request for an in-flight/succeeded key returns the existing operation
       (**idempotency**); a per-key **lock** serializes concurrent operations on the same key;
@@ -51,7 +51,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
       (completion-wins → the existing terminal state stands and no cleanup runs; abort-wins →
       cleanup runs only when the completion marker is absent); on restart a `running` operation
       with no live process is reconciled to `failed` and cleaned (**recovery**).
-- [ ] 3.2 Implement the filesystem-backed operation ledger + per-key lock under `~/.switchboard`
+- [x] 3.2 Implement the filesystem-backed operation ledger + per-key lock under `~/.switchboard`
       to green, as a minimal named subsystem reusable by later changes.
 
 ## 4. GitHub service — `github-repos` (apps/server)
