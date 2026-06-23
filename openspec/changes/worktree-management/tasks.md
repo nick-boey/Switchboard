@@ -143,7 +143,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 10. Verify
 
-- [ ] 10.1 Run `just lint`, `just typecheck`, `just test`, and `just e2e` (after `just build`);
+- [x] 10.1 Run `just lint`, `just typecheck`, `just test`, and `just e2e` (after `just build`);
       confirm all new unit/UI/E2E tests pass, the ID-scheme tests prove **collision-resistance**
       (distinct ids) on the adversarial + case-folding corpus and the create-time
       **collision detect-and-reject** rejects a forced same-id/different-branch collision at **both
