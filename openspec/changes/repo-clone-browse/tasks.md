@@ -147,7 +147,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 10. Architecture overlay (docs)
 
-- [ ] 10.1 Author `docs/dev/Architecture/Planned/repo-clone-browse.c4` (`docs-migration.md` row
+- [x] 10.1 Author `docs/dev/Architecture/Planned/repo-clone-browse.c4` (`docs-migration.md` row
       2): `extend` `Switchboard.Api` with the GitHub service, Git service, operation
       ledger/lock, and credential helper, every addition tagged `#todo`, view ids prefixed
       `repo-clone-browse-*`; validate with
