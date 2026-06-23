@@ -26,6 +26,22 @@ export const corsConfigSchema = z
   })
   .default({ allowedOrigins: [] });
 
+/**
+ * GitHub integration config (repo-clone-browse, design Decision 8). The PAT is sourced from
+ * `~/.switchboard` out-of-band; `apiBaseUrl` defaults to the public API and is overridable so
+ * the E2E can point the provider at the fake GitHub. Unset/`null` ⇒ GitHub features disabled
+ * (the "not configured" state), keeping an existing config backward-compatible.
+ */
+export const githubConfigSchema = z
+  .object({
+    /** Fine-grained PAT read from `~/.switchboard` (perms `600`). */
+    token: z.string().min(1),
+    /** GitHub REST base URL; overridden in tests/E2E. */
+    apiBaseUrl: z.string().url().default('https://api.github.com'),
+  })
+  .nullable()
+  .default(null);
+
 export const configSchema = z.object({
   /** Bearer token for the always-available bearer auth path; generated on first run. */
   bearerToken: z.string().min(1),
@@ -40,10 +56,11 @@ export const configSchema = z.object({
   telemetry: telemetryConfigSchema,
   cors: corsConfigSchema,
   /**
-   * RESERVED slot for the GitHub PAT / credential helper config — populated by the
-   * `repo-clone-browse` change, not here (design Non-Goals). Kept `null` for now.
+   * GitHub PAT / API config (repo-clone-browse). Unset/`null` ⇒ GitHub features disabled
+   * (the "not configured" state). See `githubConfigSchema`.
    */
-  github: z.null().default(null),
+  github: githubConfigSchema,
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
+export type GithubConfig = z.infer<typeof githubConfigSchema>;

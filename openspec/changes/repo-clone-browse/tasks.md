@@ -27,7 +27,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 2. Shared contracts & config (packages/shared)
 
-- [ ] 2.1 Write the failing schema tests: the repo-list response (the authenticated user's own
+- [x] 2.1 Write the failing schema tests: the repo-list response (the authenticated user's own
       account and their organisations as selectable owners, plus accessible repositories each
       carrying their owner), the clone request (accepts a full
       `https://github.com/<owner>/<repo>` URL — including an optional trailing `.git`, normalized
@@ -36,7 +36,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
       the resulting operation status out), the clone/operation-status response, and the `github`
       config shape that replaces the reserved `z.null()` (PAT sourced from `~/.switchboard`;
       unset/`null` ⇒ disabled).
-- [ ] 2.2 Implement the Zod schemas (including the abort request/response and the owner-aware
+- [x] 2.2 Implement the Zod schemas (including the abort request/response and the owner-aware
       repo-list response) and the `github` config slot in `packages/shared` to green; confirm an
       unconfigured (`null`) config still parses (backward compatible).
 
