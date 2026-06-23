@@ -122,7 +122,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 8. End-to-end (Playwright — requires `just build`)
 
-- [ ] 8.1 Write the failing E2E (group-1.1 fixture): create a worktree (**new branch** and
+- [x] 8.1 Write the failing E2E (group-1.1 fixture): create a worktree (**new branch** and
       **existing-remote branch**) → it appears in the hub with the right branch + git lamp; create
       with an **adversarial branch name** (`feature/foo`, a Unicode name) → a valid `<wt-id>`
       directory + correct mapping; **delete via confirmation** (the `force` path — the MVP delete
@@ -130,7 +130,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
       bare/siblings survive; **delete refused** without confirmation/`force` (the un-forced path is
       always refused in the MVP) and for an unsafe (dirty) worktree; and the **ledger/lock**
       behaviours (idempotent duplicate create, abort + cleanup, recovery after restart).
-- [ ] 8.2 Wire the flow end-to-end to green.
+- [x] 8.2 Wire the flow end-to-end to green.
 
 ## 9. Architecture overlay (docs)
 

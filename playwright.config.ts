@@ -12,6 +12,7 @@ const DEDICATED_SPECS = [
   /app-shell\.spec\.ts/,
   /storybook-prototypes\..*\.spec\.ts/,
   /repo-clone\.spec\.ts/,
+  /worktree\.spec\.ts/,
 ];
 
 export default defineConfig({
@@ -41,6 +42,13 @@ export default defineConfig({
       // to local source repos (no network).
       name: 'repo-clone',
       testMatch: /repo-clone\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
+    },
+    {
+      // The worktree-management flow: create / list / delete worktrees in the hub against a real
+      // `start(ctx)` server, with github.com clones redirected to local source repos (no network).
+      name: 'worktree',
+      testMatch: /worktree\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
     },
     {
