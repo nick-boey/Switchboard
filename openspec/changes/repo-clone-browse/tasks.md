@@ -56,14 +56,14 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 4. GitHub service — `github-repos` (apps/server)
 
-- [ ] 4.1 Write the failing tests (using the group-1.1 fake): listing returns the user's
+- [x] 4.1 Write the failing tests (using the group-1.1 fake): listing returns the user's
       organisations and accessible repositories; the **authenticated user's own account is
       exposed as a selectable owner** alongside the organisations, and personally-owned repos
       are returned for that account (distinct from org repos); results **paginate** by following
       `Link: rel="next"`; failures map to typed `unauthorized` / `rate-limited` (with reset) /
       `not-found` errors with **no GitHub error body** surfaced or logged; an unconfigured PAT
       yields `not-configured`; the PAT implementation satisfies the **provider interface**.
-- [ ] 4.2 Implement the `GitHubProvider` interface and its PAT-backed `fetch` implementation
+- [x] 4.2 Implement the `GitHubProvider` interface and its PAT-backed `fetch` implementation
       (selectable owners = account + orgs, pagination, typed errors, not-configured) to green.
 
 ## 5. Git service — bare clone, path safety, credential helper (apps/server)

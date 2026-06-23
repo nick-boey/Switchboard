@@ -56,11 +56,15 @@ function authorized(header: string | undefined, token: string): boolean {
   return m?.[1] === token;
 }
 
-/** Build a `Link` header pointing at the next page of `path`, preserving existing query params. */
-function nextLink(path: string, query: URLSearchParams, nextPage: number): string {
+/**
+ * Build a `Link` header pointing at the next page, using the REQUEST's own origin so a client
+ * following the absolute `next` URL reaches the same fake whether it is invoked in-process
+ * (Vitest) or over a loopback socket (Playwright).
+ */
+function nextLink(origin: string, path: string, query: URLSearchParams, nextPage: number): string {
   const params = new URLSearchParams(query);
   params.set('page', String(nextPage));
-  return `<http://github.fake${path}?${params.toString()}>; rel="next"`;
+  return `<${origin}${path}?${params.toString()}>; rel="next"`;
 }
 
 /** Slice `items` to the requested 1-based page and report whether a further page exists. */
@@ -109,21 +113,27 @@ export function createFakeGitHub(fixtures: FakeGitHubFixtures): FakeGitHub {
   app.get('/user', (c) => c.json({ login: fixtures.login }));
 
   app.get('/user/orgs', (c) => {
-    const query = new URLSearchParams(new URL(c.req.url).search);
+    const url = new URL(c.req.url);
+    const query = new URLSearchParams(url.search);
     const orgs = fixtures.organisations.map((login) => ({ login }));
     const { page, hasNext, nextPage } = paginate(orgs, query, pageSize);
-    const headers = hasNext ? { Link: nextLink('/user/orgs', query, nextPage) } : undefined;
+    const headers = hasNext
+      ? { Link: nextLink(url.origin, '/user/orgs', query, nextPage) }
+      : undefined;
     return c.json(page, 200, headers);
   });
 
   app.get('/user/repos', (c) => {
-    const query = new URLSearchParams(new URL(c.req.url).search);
+    const url = new URL(c.req.url);
+    const query = new URLSearchParams(url.search);
     const repos = fixtures.repositories.map((r) => ({
       name: r.name,
       owner: { login: r.owner },
     }));
     const { page, hasNext, nextPage } = paginate(repos, query, pageSize);
-    const headers = hasNext ? { Link: nextLink('/user/repos', query, nextPage) } : undefined;
+    const headers = hasNext
+      ? { Link: nextLink(url.origin, '/user/repos', query, nextPage) }
+      : undefined;
     return c.json(page, 200, headers);
   });
 
