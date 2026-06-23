@@ -61,7 +61,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 4. Worktree creation as a tracked operation (apps/server)
 
-- [ ] 4.1 Write the failing tests (reusing the operation scaffolding): widen the ledger to a
+- [x] 4.1 Write the failing tests (reusing the operation scaffolding): widen the ledger to a
       `worktree` `OperationType`; a create **starts** as a tracked op keyed by `<repo-id>/<wt-id>`
       and reaches `ready`; the operation **records the exact requested branch** in its metadata and
       a duplicate create for the same key **and the same exact (case-sensitive) branch** is
@@ -74,7 +74,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
       **abort-races-completion** single-terminal-transition behaviour (completion-wins keeps it;
       abort-wins cleans only an incomplete target, gated on the completion check); a `running`
       worktree op with a dead process is **reconciled** to `failed` + cleanup on restart.
-- [ ] 4.2 Implement the worktree orchestrator (Git service + the `worktree` ledger handler
+- [x] 4.2 Implement the worktree orchestrator (Git service + the `worktree` ledger handler
       `isComplete`/`cleanup` + the per-`<repo-id>` git-mutation lock) to green, recording the exact
       requested branch in the operation metadata and gating idempotent reuse on **branch equality
       first** so a same-key/different-branch request raises the typed collision error at the

@@ -17,7 +17,8 @@ import { systemClock, systemProcessProbe, type Clock, type ProcessProbe } from '
  */
 
 export type OperationState = 'pending' | 'running' | 'succeeded' | 'failed' | 'aborted';
-export type OperationType = 'clone';
+/** Additive: `worktree` joins `clone` (design Decision 3 / worktree-management Decision 3). */
+export type OperationType = 'clone' | 'worktree';
 
 export interface OperationError {
   kind: string;
@@ -34,6 +35,12 @@ export interface OperationRecord {
   /** The worker subprocess pid, recorded for restart recovery. */
   pid?: number;
   error?: OperationError;
+  /**
+   * Durable, non-sensitive operation metadata. The worktree create records the **exact requested
+   * branch** here so idempotent reuse can be gated on branch equality (a same-key/different-branch
+   * truncated-hash collision is rejected, not aliased — worktree-management Decision 3).
+   */
+  metadata?: Record<string, string>;
 }
 
 /** Per-type behaviour the ledger needs to resolve a record without the live worker closure. */
@@ -53,6 +60,8 @@ export interface OperationWorkerContext {
 export interface StartOptions {
   type: OperationType;
   key: string;
+  /** Durable non-sensitive metadata stored on a NEW record (e.g. the worktree's exact branch). */
+  metadata?: Record<string, string>;
   /** The live worker. Resolves on success, rejects on failure; cancelled via `signal`. */
   run: (worker: OperationWorkerContext) => Promise<void>;
 }
@@ -71,7 +80,12 @@ export interface OperationLedger {
 export interface OperationLedgerConfig {
   /** Directory the records live in (e.g. `~/.switchboard/operations`). */
   root: string;
-  handlers: Record<OperationType, OperationHandler>;
+  /**
+   * Per-type handlers. **Partial** so each orchestrator registers only the types it owns (the
+   * clone and worktree orchestrators share one on-disk store but each handles its own records); a
+   * record whose type has no handler here is left untouched by this ledger's abort/reconcile.
+   */
+  handlers: Partial<Record<OperationType, OperationHandler>>;
   clock?: Clock;
   processProbe?: ProcessProbe;
   lock?: KeyedLock;
@@ -113,7 +127,7 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
     record.error = { kind };
     write(record);
     const handler = handlers[record.type];
-    if (!(await handler.isComplete(record))) await handler.cleanup(record);
+    if (handler && !(await handler.isComplete(record))) await handler.cleanup(record);
   };
 
   const launch = (record: OperationRecord, run: StartOptions['run']): void => {
@@ -163,7 +177,7 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
   };
 
   return {
-    async start({ type, key, run }) {
+    async start({ type, key, metadata, run }) {
       return lock.run(key, async () => {
         const existing = read(key);
         if (existing && ACTIVE.has(existing.state)) return existing;
@@ -173,6 +187,7 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
           key,
           state: 'running',
           startedAt: clock.now(),
+          ...(metadata ? { metadata } : {}),
         };
         write(record);
         launch(record, run);
@@ -189,7 +204,7 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
         const handler = handlers[record.type];
         controllers.get(key)?.abort();
 
-        if (await handler.isComplete(record)) {
+        if (handler && (await handler.isComplete(record))) {
           // The worker finished and wrote its marker before we won the lock: completion wins.
           record.state = 'succeeded';
           record.finishedAt = clock.now();
@@ -200,7 +215,7 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
         record.state = 'aborted';
         record.finishedAt = clock.now();
         write(record);
-        if (!(await handler.isComplete(record))) await handler.cleanup(record);
+        if (handler && !(await handler.isComplete(record))) await handler.cleanup(record);
         return record;
       });
     },
@@ -225,6 +240,9 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
       const records = await this.list();
       for (const record of records) {
         if (record.state !== 'running') continue;
+        // Only reconcile records this ledger owns a handler for (the shared store also holds the
+        // other orchestrator's records, which it must not touch).
+        if (!handlers[record.type]) continue;
         await lock.run(record.key, async () => {
           const cur = read(record.key);
           if (!cur || cur.state !== 'running') return;
@@ -235,7 +253,7 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
           cur.error = { kind: 'git-failure', message: 'interrupted before completion' };
           write(cur);
           const handler = handlers[cur.type];
-          if (!(await handler.isComplete(cur))) await handler.cleanup(cur);
+          if (handler && !(await handler.isComplete(cur))) await handler.cleanup(cur);
         });
       }
     },
