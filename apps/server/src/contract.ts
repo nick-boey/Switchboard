@@ -1,4 +1,5 @@
 import type { InferRequestType, InferResponseType } from 'hono/client';
+import type { OperationStatus, RepoListResponse, RepoTarget } from '@switchboard/shared';
 import type { ServerClient } from './client.js';
 
 /**
@@ -24,4 +25,38 @@ type EchoResponse = InferResponseType<EchoPost, 200>;
 export type _EchoRequestContract = Expect<Equal<EchoRequest, { message: string }>>;
 export type _EchoResponseContract = Expect<
   Equal<EchoResponse, { message: string; length: number }>
+>;
+
+// --- repo-clone-browse routes (design Decision 4) ---------------------------
+// The typed client mirrors every repo route; drift from the shared schemas fails the build here.
+
+type ClonePost = ServerClient['repos']['clone']['$post'];
+type AbortPost = ServerClient['repos']['abort']['$post'];
+type ClonedGet = ServerClient['repos']['cloned']['$get'];
+type GithubGet = ServerClient['repos']['github']['$get'];
+type StatusGet = ServerClient['repos'][':owner'][':repo']['status']['$get'];
+
+// The client sends `{ target }` / `{ repoId }` (the schema INPUT), not the transformed output.
+export type _CloneRequestContract = Expect<
+  Equal<InferRequestType<ClonePost>['json'], { target: string }>
+>;
+export type _AbortRequestContract = Expect<
+  Equal<InferRequestType<AbortPost>['json'], { repoId: string }>
+>;
+
+// Every operation-bearing route returns the shared `OperationStatus` shape on 200.
+export type _CloneResponseContract = Expect<
+  Equal<InferResponseType<ClonePost, 200>, OperationStatus>
+>;
+export type _AbortResponseContract = Expect<
+  Equal<InferResponseType<AbortPost, 200>, OperationStatus>
+>;
+export type _StatusResponseContract = Expect<
+  Equal<InferResponseType<StatusGet, 200>, OperationStatus>
+>;
+export type _ClonedResponseContract = Expect<
+  Equal<InferResponseType<ClonedGet, 200>, { repos: RepoTarget[] }>
+>;
+export type _GithubResponseContract = Expect<
+  Equal<InferResponseType<GithubGet, 200>, RepoListResponse>
 >;

@@ -102,7 +102,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 7. API routes, typed client & contract (apps/server)
 
-- [ ] 7.1 Write the failing tests: the clone, **abort**, list-cloned, operation-status, and
+- [x] 7.1 Write the failing tests: the clone, **abort**, list-cloned, operation-status, and
       repo-list routes validate input with Zod (invalid input → `422`, handler not invoked); the
       **abort** route aborts an in-flight clone and responds with the operation's terminal
       status (and for an unknown or already-finished operation — including a clone that
@@ -110,7 +110,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
       without terminating any subprocess or deleting the completed clone); and the typed client
       mirrors every route — including an **abort method** — so schema drift fails the
       **contract** test.
-- [ ] 7.2 Wire the routes (including the **abort** route) into the Hono app and extend the typed
+- [x] 7.2 Wire the routes (including the **abort** route) into the Hono app and extend the typed
       client/contract — including the abort method — to green.
 
 ## 8. Web UI — New repository & getting-ready (apps/web)
