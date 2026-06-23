@@ -8,7 +8,11 @@ import { defineConfig, devices } from '@playwright/test';
 const PREVIEW_PORT = 4173;
 const PROTOTYPE_STORYBOOK_PORT = 6007;
 // Specs owned by dedicated projects below — kept out of the headless `chromium` smoke project.
-const DEDICATED_SPECS = [/app-shell\.spec\.ts/, /storybook-prototypes\..*\.spec\.ts/];
+const DEDICATED_SPECS = [
+  /app-shell\.spec\.ts/,
+  /storybook-prototypes\..*\.spec\.ts/,
+  /repo-clone\.spec\.ts/,
+];
 
 export default defineConfig({
   testDir: './e2e',
@@ -29,6 +33,14 @@ export default defineConfig({
       // `webServer` below, talking to a `start(ctx)` server booted inside the spec.
       name: 'web',
       testMatch: /app-shell\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
+    },
+    {
+      // The repo-clone-browse flow (group 9): the New repository → clone → getting-ready flow
+      // against a real `start(ctx)` server, with a fake GitHub and github.com clones redirected
+      // to local source repos (no network).
+      name: 'repo-clone',
+      testMatch: /repo-clone\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
     },
     {

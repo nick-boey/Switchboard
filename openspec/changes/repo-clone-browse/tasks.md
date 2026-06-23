@@ -135,7 +135,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 9. End-to-end (Playwright — requires `just build`)
 
-- [ ] 9.1 Write the failing E2E (temp-git fixture + the group-1.1 fake GitHub): New repository
+- [x] 9.1 Write the failing E2E (temp-git fixture + the group-1.1 fake GitHub): New repository
       flow → Clone → getting-ready → repository ready, covering **both a personal-account repo
       and an organisation repo** via the owner selector and a **From URL `.git` input**
       (`https://github.com/<owner>/<repo>.git`); **abort** (the Abort action calls the
@@ -143,7 +143,7 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
       and the **ledger/lock** behaviours (concurrent clone requests, cancellation, an **abort
       that races completion** resolving to a single terminal state without deleting a completed
       clone, recovery after restart).
-- [ ] 9.2 Wire the flow end-to-end to green.
+- [x] 9.2 Wire the flow end-to-end to green.
 
 ## 10. Architecture overlay (docs)
 
