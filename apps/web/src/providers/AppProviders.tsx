@@ -1,7 +1,7 @@
 import { MantineProvider, type MantineColorScheme } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { switchboardTheme } from '../theme/theme';
+import { switchboardCssVariablesResolver, switchboardTheme } from '../theme/theme';
 
 export interface AppProvidersProps {
   children: ReactNode;
@@ -29,7 +29,11 @@ export function AppProviders({ children, queryClient, colorScheme = 'light' }: A
       }),
   );
   return (
-    <MantineProvider theme={switchboardTheme} defaultColorScheme={colorScheme}>
+    <MantineProvider
+      theme={switchboardTheme}
+      defaultColorScheme={colorScheme}
+      cssVariablesResolver={switchboardCssVariablesResolver}
+    >
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     </MantineProvider>
   );

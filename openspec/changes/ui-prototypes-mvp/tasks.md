@@ -30,24 +30,30 @@ resolved at archive (the `switch-openspec-archive` workflow), not here.
 
 ## 2. Flat design tokens (theme.ts re-treatment)
 
-- [ ] 2.1 Write the failing token test: the four palettes (bakelite/patina/brass/signal) are
+- [x] 2.1 Write the failing token test: the four palettes (bakelite/patina/brass/signal) are
       retained with `patina` primary; the two named **indicator status tokens** (cobalt = PR
       `open`, violet = PR `merged`) exist as theme tokens and resolve in both light and dark; the
       flat surface/divider/corner-screw + panel-radius tokens exist and resolve in both light and
-      dark; the embossed tokens (`embossSurface`/`embossInset`/`jack*`) are gone.
-- [ ] 2.2 Re-treat `theme/theme.ts`: replace the embossed token set with the flat token set,
+      dark; the embossed tokens (`embossSurface`/`embossInset`/`jack*`) are gone. → `theme.test.ts`
+      (token contract + `cssVariablesResolver` light/dark resolution).
+- [x] 2.2 Re-treat `theme/theme.ts`: replace the embossed token set with the flat token set,
       keep the palettes/type, add the cobalt/violet indicator status tokens (graduating the
       prototype's local `COBALT`/`VIOLET` constants into the theme), expose scheme-aware tokens
-      (per 1.3); update `theme.stories.tsx`.
+      (per 1.3); update `theme.stories.tsx`. → flat `SwitchboardTokens` + `switchboardCssVariables
+    Resolver` (`--sb-*`), wired into `AppProviders`; embossed tokens removed; `EmbossedPanel`/
+      `JackButton` bridged to flat (superseded fully in groups 3/6); flat-token gallery story.
 
 ## 3. Flat surface primitives (raised card + pressed well)
 
-- [ ] 3.1 Write the failing story + render test: a raised card (outline + four-corner-screw
+- [x] 3.1 Write the failing story + render test: a raised card (outline + four-corner-screw
       motif + optional inset section title) and a pressed well (recessed, no screws/title) are
-      visually distinct, and a well nests inside a card.
-- [ ] 3.2 Port `kit.tsx` `Panel` → production raised-card + pressed-well primitives with
+      visually distinct, and a well nests inside a card. → `Surface.test.tsx` (node structure) +
+      `Surface.stories.tsx` play-tests (distinct computed surfaces + dark resolution, PASS).
+- [x] 3.2 Port `kit.tsx` `Panel` → production raised-card + pressed-well primitives with
       production stories; supersede `components/EmbossedPanel.tsx` (replacing/removing
-      `EmbossedPanel.stories.tsx` in lockstep) and update its consumers.
+      `EmbossedPanel.stories.tsx` in lockstep) and update its consumers. → `src/ui/surface`
+      (`Card`/`Well`, `--sb-*` driven); `EmbossedPanel.tsx` + `.stories.tsx` removed; `AppShell`
+      now uses `Card`.
 
 ## 4. Session plug
 

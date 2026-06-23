@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import type { SwitchboardTokens } from '../theme/theme';
-import { EmbossedPanel } from './EmbossedPanel';
+import { Card } from '../ui/surface';
 import { JackButton } from './JackButton';
 
 export interface AppShellProps {
@@ -77,10 +77,7 @@ export function AppShell({ client: injectedClient }: AppShellProps) {
 
       <MantineAppShell.Main>
         <Stack gap="md">
-          <EmbossedPanel data-testid="line-status">
-            <Text fw={700} tt="uppercase" fz="xs" c="patina.8" mb={6}>
-              Line status
-            </Text>
+          <Card title="Line status" data-testid="line-status">
             <Text data-testid="line-status-value">
               {lineStatus.isSuccess
                 ? lineStatus.data.message
@@ -88,7 +85,7 @@ export function AppShell({ client: injectedClient }: AppShellProps) {
                   ? 'line check failed'
                   : 'connecting…'}
             </Text>
-          </EmbossedPanel>
+          </Card>
         </Stack>
       </MantineAppShell.Main>
     </MantineAppShell>

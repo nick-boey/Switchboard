@@ -1,5 +1,4 @@
 import { UnstyledButton, useMantineTheme, Tooltip } from '@mantine/core';
-import type { SwitchboardTokens } from '../theme/theme';
 
 export interface JackButtonProps {
   /** Accessible label for the jack (also shown as a tooltip). */
@@ -11,9 +10,8 @@ export interface JackButtonProps {
 }
 
 /**
- * Plug/jack socket primitive (design Decision 7). A circular brass-ringed socket with a dark
- * bore — the signature switchboard motif — rendered as an accessible button. `active` lights
- * the ring to read as a patched/connected line.
+ * Bridge: the brass jack motif on flat surfaces. Superseded by the `src/ui` button / icon-button
+ * primitives (task 6.2); kept compiling only until its consumers (the app shell) move over.
  */
 export function JackButton({
   label,
@@ -22,7 +20,6 @@ export function JackButton({
   'data-testid': testId,
 }: JackButtonProps) {
   const theme = useMantineTheme();
-  const tokens = theme.other as SwitchboardTokens;
   return (
     <Tooltip label={label} withArrow>
       <UnstyledButton
@@ -31,13 +28,11 @@ export function JackButton({
         onClick={onClick}
         data-testid={testId}
         style={{
-          width: tokens.jackDiameter,
-          height: tokens.jackDiameter,
+          width: '2.75rem',
+          height: '2.75rem',
           borderRadius: '50%',
-          background: `radial-gradient(circle at 50% 38%, ${tokens.jackBore} 0 34%, ${tokens.jackRing} 36% 64%, ${theme.colors.brass[7]} 66% 100%)`,
-          boxShadow: active
-            ? `0 0 0 2px ${theme.colors.signal[5]}, ${tokens.embossSurface}`
-            : tokens.embossSurface,
+          background: `radial-gradient(circle at 50% 38%, ${theme.black} 0 34%, ${theme.colors.brass[5]} 36% 64%, ${theme.colors.brass[7]} 66% 100%)`,
+          boxShadow: active ? `0 0 0 2px ${theme.colors.signal[5]}` : 'none',
           cursor: 'pointer',
           display: 'inline-block',
         }}
