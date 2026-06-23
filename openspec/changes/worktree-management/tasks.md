@@ -41,7 +41,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
 
 ## 3. Git service — worktree create / list / delete, branch existence (apps/server)
 
-- [ ] 3.1 Write the failing tests (group-1.1 fixture as the remote/bare clone): **create** lands a
+- [x] 3.1 Write the failing tests (group-1.1 fixture as the remote/bare clone): **create** lands a
       working tree at `repos/<owner>/<repo>/worktrees/<wt-id>` on the branch; **existing-remote
       branch** fetches and checks out tracking `origin/<branch>`; **new branch** is created from the
       base (default = origin `HEAD`); create **requires a completed bare clone** and **rejects**
@@ -54,7 +54,7 @@ first. Ordering constraints on other changes live in `dependencies.md`, not here
       `git worktree list --porcelain` with the correct id↔branch mapping + git-status, and
       **ignores** a foreign/mismatched dir; **delete** removes only the target worktree (bare +
       siblings untouched), prunes, and never deletes the branch.
-- [ ] 3.2 Implement the Git-service worktree operations (validated `<repo-id>`/`<wt-id>` → `git
+- [x] 3.2 Implement the Git-service worktree operations (validated `<repo-id>`/`<wt-id>` → `git
       worktree add/list/remove` against `.bare`, branch-existence check via the remote, the
       create-time collision check against the on-disk worktree set comparing branches exactly,
       git-status derivation) to green.

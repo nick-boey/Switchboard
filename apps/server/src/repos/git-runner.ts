@@ -46,9 +46,22 @@ export interface GitRunOptions {
   onSpawn?(pid: number): void;
 }
 
+/** Outcome of a captured git invocation — the exit code and stdout, never stderr (no-leak). */
+export interface GitCaptureResult {
+  code: number | null;
+  stdout: string;
+}
+
 export interface GitRunner {
   /** Run `git <args>`; resolves on exit 0, rejects otherwise (message carries the code, no body). */
   run(args: string[], options?: GitRunOptions): Promise<void>;
+  /**
+   * Run `git <args>` capturing stdout, **never throwing on a non-zero exit** (the caller inspects
+   * `code`). stderr is discarded unread so a git/GitHub error body can never reach a log or a
+   * thrown message (no-leak). Used by the worktree operations for both reads (`worktree list`,
+   * `status`, `rev-list`, `show-ref`) and mutations (`worktree add/remove`, `fetch`).
+   */
+  capture(args: string[], options?: GitRunOptions): Promise<GitCaptureResult>;
 }
 
 export function createGitRunner(): GitRunner {
@@ -85,6 +98,40 @@ export function createGitRunner(): GitRunner {
           options.signal?.removeEventListener('abort', onAbort);
           if (code === 0) resolve();
           else reject(new GitCloneError(classifyGitStderr(stderr), code));
+        });
+      });
+    },
+
+    capture(args, options = {}) {
+      return new Promise<GitCaptureResult>((resolve, reject) => {
+        // stdout piped + captured; stderr discarded unread (no-leak — error bodies never surface).
+        const child = spawn('git', args, {
+          cwd: options.cwd,
+          env: options.env,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        if (typeof child.pid === 'number') options.onSpawn?.(child.pid);
+
+        let stdout = '';
+        child.stdout?.on('data', (chunk: Buffer) => {
+          if (stdout.length < 1_000_000) stdout += chunk.toString('utf8');
+        });
+
+        const onAbort = (): void => {
+          child.kill('SIGTERM');
+        };
+        if (options.signal) {
+          if (options.signal.aborted) child.kill('SIGTERM');
+          else options.signal.addEventListener('abort', onAbort, { once: true });
+        }
+
+        child.on('error', (err) => {
+          options.signal?.removeEventListener('abort', onAbort);
+          reject(err);
+        });
+        child.on('close', (code) => {
+          options.signal?.removeEventListener('abort', onAbort);
+          resolve({ code, stdout });
         });
       });
     },

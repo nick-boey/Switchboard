@@ -32,6 +32,7 @@ describe('clone no-leak (PAT never escapes)', () => {
         recordedArgs = args;
         return real.run(args, options);
       },
+      capture: (args, options) => real.capture(args, options),
     };
   });
   afterEach(() => {
