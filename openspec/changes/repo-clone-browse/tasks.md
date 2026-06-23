@@ -68,20 +68,20 @@ constraints on other changes live in `dependencies.md`, not here. The programme-
 
 ## 5. Git service — bare clone, path safety, credential helper (apps/server)
 
-- [ ] 5.1 Write the failing tests (temp-git fixture as the remote): a **bare clone** lands at
+- [x] 5.1 Write the failing tests (temp-git fixture as the remote): a **bare clone** lands at
       `~/.switchboard/repos/<owner>/<repo>/.bare` with no working tree; same-named forks do not
       collide; **list-cloned** reads completed clones from disk and ignores incomplete targets;
       out-of-charset/traversal owner-repo input is rejected before any path is constructed.
-- [ ] 5.2 Implement the Git service (validated `<owner>/<repo>` → bare `git clone --bare`;
+- [x] 5.2 Implement the Git service (validated `<owner>/<repo>` → bare `git clone --bare`;
       list-cloned with a completed-clone marker) to green.
-- [ ] 5.3 Write the failing **no-leak** tests (group-1.2/1.3 harness): the PAT is absent from
+- [x] 5.3 Write the failing **no-leak** tests (group-1.2/1.3 harness): the PAT is absent from
       process arguments and the clone URL is plain `https://github.com/<owner>/<repo>.git`; the
       bare config at `~/.switchboard/repos/<owner>/<repo>/.bare/config` (not a `.git/config`,
       which a bare clone lacks) holds neither a credential-helper entry nor a PAT-bearing remote
       URL — e.g. `git --git-dir …/.bare config --get-regexp '^(credential|remote\..*\.url)'`
       returns nothing secret — and the PAT appears nowhere under the clone; the PAT, clone URL,
       absolute paths, command args, and GitHub error body are redacted from telemetry.
-- [ ] 5.4 Implement the **credential helper** (reads the PAT from `~/.switchboard`, emits it
+- [x] 5.4 Implement the **credential helper** (reads the PAT from `~/.switchboard`, emits it
       over git's credential protocol, wired per-invocation with host-scoped `-c`, never
       persisted) to green.
 
