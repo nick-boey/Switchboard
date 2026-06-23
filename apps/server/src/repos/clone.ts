@@ -112,7 +112,9 @@ export function createCloneOrchestrator(
         run: ({ signal, setPid }) =>
           gitService.cloneBare(target, {
             signal,
-            onSpawn: (pid) => void setPid(pid),
+            // Await the durable pid persist before the runner awaits the git process (restart
+            // recovery): reconcile treats a missing pid conservatively, so we shrink that window.
+            onSpawn: (pid) => setPid(pid),
             remoteUrl: options.remoteUrl,
           }),
       });

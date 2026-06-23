@@ -12,6 +12,7 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import {
   ATTR_HTTP_REQUEST_METHOD,
   ATTR_HTTP_RESPONSE_STATUS_CODE,
+  ATTR_HTTP_ROUTE,
   ATTR_SERVER_ADDRESS,
   ATTR_URL_PATH,
   ATTR_URL_SCHEME,
@@ -201,16 +202,27 @@ export function createTelemetry(config: AppConfig): Telemetry {
  * Hono middleware that records one semconv HTTP SERVER span per handled request
  * (design Decision 5). Attributes follow OTel semantic conventions; the redacting processor
  * scrubs anything sensitive before export.
+ *
+ * The span name and `url.path` use the matched route **TEMPLATE** (e.g.
+ * `/worktrees/:owner/:repo/:wtId/status`), never the concrete request path. The concrete path can
+ * embed a worktree `<wt-id>` whose slug echoes a (sensitive) branch name; that low-cardinality
+ * template carries no concrete id/slug, so it cannot leak — and span NAMES are not scrubbed by the
+ * redacting processor (worktree-management no-leak guarantee). Hono resolves `c.req.routePath` to
+ * the deepest matched handler's registered pattern once `next()` has run, so the template is read
+ * after the downstream handlers complete.
  */
 export function telemetryMiddleware(tracer: Tracer): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    const span = tracer.startSpan(`${c.req.method} ${c.req.path}`, {
+    const method = c.req.method;
+    const url = new URL(c.req.url);
+    // Name starts as the bare method; it is refined to `<METHOD> <route-template>` in `finally`
+    // once the matched route is known (the concrete path is never used).
+    const span = tracer.startSpan(method, {
       kind: SpanKind.SERVER,
       attributes: {
-        [ATTR_HTTP_REQUEST_METHOD]: c.req.method,
-        [ATTR_URL_PATH]: c.req.path,
-        [ATTR_URL_SCHEME]: new URL(c.req.url).protocol.replace(':', ''),
-        [ATTR_SERVER_ADDRESS]: new URL(c.req.url).host,
+        [ATTR_HTTP_REQUEST_METHOD]: method,
+        [ATTR_URL_SCHEME]: url.protocol.replace(':', ''),
+        [ATTR_SERVER_ADDRESS]: url.host,
       },
     });
     try {
@@ -220,6 +232,14 @@ export function telemetryMiddleware(tracer: Tracer): MiddlewareHandler<AppEnv> {
       span.setStatus({ code: SpanStatusCode.ERROR });
       throw err;
     } finally {
+      // The matched route template (low-cardinality, no concrete id/slug). Falls back to the
+      // method alone if no route matched (e.g. a 404 with no registered pattern).
+      const route = c.req.routePath;
+      if (route) {
+        span.updateName(`${method} ${route}`);
+        span.setAttribute(ATTR_URL_PATH, route);
+        span.setAttribute(ATTR_HTTP_ROUTE, route);
+      }
       span.end();
     }
   };

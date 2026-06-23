@@ -58,7 +58,8 @@ export interface WorktreeService {
 
 export interface WorktreeRunOptions {
   signal?: AbortSignal;
-  onSpawn?(pid: number): void;
+  /** May return a promise; the runner awaits it so the pid is persisted before the process exit. */
+  onSpawn?(pid: number): void | Promise<void>;
 }
 
 export interface WorktreeServiceDeps {

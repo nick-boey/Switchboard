@@ -42,8 +42,13 @@ export interface GitRunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
-  /** Invoked once the subprocess has a pid (recorded for restart recovery). */
-  onSpawn?(pid: number): void;
+  /**
+   * Invoked once the subprocess has a pid (recorded for restart recovery). May return a promise;
+   * the runner AWAITS it before awaiting the process exit, so the pid is persisted durably while
+   * the child is still alive. This shrinks the crash window in which a `running` op has no
+   * recorded pid (reconcile treats a missing pid conservatively — see the operation ledger).
+   */
+  onSpawn?(pid: number): void | Promise<void>;
 }
 
 /** Outcome of a captured git invocation — the exit code and stdout, never stderr (no-leak). */
@@ -66,30 +71,31 @@ export interface GitRunner {
 
 export function createGitRunner(): GitRunner {
   return {
-    run(args, options = {}) {
-      return new Promise<void>((resolve, reject) => {
-        // stdin/stdout ignored; stderr piped only to classify a failure, then discarded.
-        const child = spawn('git', args, {
-          cwd: options.cwd,
-          env: options.env,
-          stdio: ['ignore', 'ignore', 'pipe'],
-        });
-        if (typeof child.pid === 'number') options.onSpawn?.(child.pid);
+    async run(args, options = {}) {
+      // stdin/stdout ignored; stderr piped only to classify a failure, then discarded.
+      const child = spawn('git', args, {
+        cwd: options.cwd,
+        env: options.env,
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
 
-        let stderr = '';
-        child.stderr?.on('data', (chunk: Buffer) => {
-          // Cap retained stderr so a huge failure output cannot balloon memory.
-          if (stderr.length < 8192) stderr += chunk.toString('utf8');
-        });
+      let stderr = '';
+      child.stderr?.on('data', (chunk: Buffer) => {
+        // Cap retained stderr so a huge failure output cannot balloon memory.
+        if (stderr.length < 8192) stderr += chunk.toString('utf8');
+      });
 
-        const onAbort = (): void => {
-          child.kill('SIGTERM');
-        };
-        if (options.signal) {
-          if (options.signal.aborted) child.kill('SIGTERM');
-          else options.signal.addEventListener('abort', onAbort, { once: true });
-        }
+      const onAbort = (): void => {
+        child.kill('SIGTERM');
+      };
+      if (options.signal) {
+        if (options.signal.aborted) child.kill('SIGTERM');
+        else options.signal.addEventListener('abort', onAbort, { once: true });
+      }
 
+      // Listeners are attached synchronously above, so events that fire while we await the pid
+      // persist below are not missed.
+      const closed = new Promise<void>((resolve, reject) => {
         child.on('error', (err) => {
           options.signal?.removeEventListener('abort', onAbort);
           reject(err);
@@ -100,31 +106,36 @@ export function createGitRunner(): GitRunner {
           else reject(new GitCloneError(classifyGitStderr(stderr), code));
         });
       });
+
+      // Persist the pid durably BEFORE awaiting the process exit (restart recovery).
+      if (typeof child.pid === 'number') await options.onSpawn?.(child.pid);
+      await closed;
     },
 
-    capture(args, options = {}) {
-      return new Promise<GitCaptureResult>((resolve, reject) => {
-        // stdout piped + captured; stderr discarded unread (no-leak — error bodies never surface).
-        const child = spawn('git', args, {
-          cwd: options.cwd,
-          env: options.env,
-          stdio: ['ignore', 'pipe', 'ignore'],
-        });
-        if (typeof child.pid === 'number') options.onSpawn?.(child.pid);
+    async capture(args, options = {}) {
+      // stdout piped + captured; stderr discarded unread (no-leak — error bodies never surface).
+      const child = spawn('git', args, {
+        cwd: options.cwd,
+        env: options.env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
 
-        let stdout = '';
-        child.stdout?.on('data', (chunk: Buffer) => {
-          if (stdout.length < 1_000_000) stdout += chunk.toString('utf8');
-        });
+      let stdout = '';
+      child.stdout?.on('data', (chunk: Buffer) => {
+        if (stdout.length < 1_000_000) stdout += chunk.toString('utf8');
+      });
 
-        const onAbort = (): void => {
-          child.kill('SIGTERM');
-        };
-        if (options.signal) {
-          if (options.signal.aborted) child.kill('SIGTERM');
-          else options.signal.addEventListener('abort', onAbort, { once: true });
-        }
+      const onAbort = (): void => {
+        child.kill('SIGTERM');
+      };
+      if (options.signal) {
+        if (options.signal.aborted) child.kill('SIGTERM');
+        else options.signal.addEventListener('abort', onAbort, { once: true });
+      }
 
+      // Listeners are attached synchronously above, so events that fire while we await the pid
+      // persist below are not missed.
+      const closed = new Promise<GitCaptureResult>((resolve, reject) => {
         child.on('error', (err) => {
           options.signal?.removeEventListener('abort', onAbort);
           reject(err);
@@ -134,6 +145,10 @@ export function createGitRunner(): GitRunner {
           resolve({ code, stdout });
         });
       });
+
+      // Persist the pid durably BEFORE awaiting the process exit (restart recovery).
+      if (typeof child.pid === 'number') await options.onSpawn?.(child.pid);
+      return closed;
     },
   };
 }

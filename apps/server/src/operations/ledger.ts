@@ -246,12 +246,18 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
         await lock.run(record.key, async () => {
           const cur = read(record.key);
           if (!cur || cur.state !== 'running') return;
-          const alive = cur.pid !== undefined && processProbe.isAlive(cur.pid);
-          if (alive) return;
+          // A durably-recorded pid that is still alive: the worker survived; leave it running.
+          if (cur.pid !== undefined && processProbe.isAlive(cur.pid)) return;
           cur.state = 'failed';
           cur.finishedAt = clock.now();
           cur.error = { kind: 'git-failure', message: 'interrupted before completion' };
           write(cur);
+          // Destructive cleanup is gated on KNOWING the worker is gone (restart-recovery). With no
+          // recorded pid we cannot rule out a still-live git child — a crash that landed in the
+          // tiny window between spawn and the durable pid write — so we mark the op failed/
+          // needs-attention but never delete around a possibly-live mutation. Only a pid that was
+          // persisted AND is no longer alive clears the op for cleanup.
+          if (cur.pid === undefined) return;
           const handler = handlers[cur.type];
           if (handler && !(await handler.isComplete(cur))) await handler.cleanup(cur);
         });

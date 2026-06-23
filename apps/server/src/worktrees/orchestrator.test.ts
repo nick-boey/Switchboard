@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RepoTarget } from '@switchboard/shared';
 import {
@@ -206,6 +208,33 @@ describe('worktree orchestrator (ledger + per-repo lock)', () => {
     expect(fake.cleaned).not.toContain(wtId);
     fake.pending.get(wtId)?.resolve();
     await orch.whenSettled('acme/infra', wtId);
+  });
+
+  it('does NOT destructively clean up an in-flight worktree op that has no recorded pid', async () => {
+    // Restart-recovery hazard: the server crashed after `git worktree add` was spawned but BEFORE
+    // the async pid persist landed, so the durable record is `running` with `pid === undefined`.
+    // The old git child may still be mutating the bare repo / worktree admin state, so reconcile
+    // must mark the op failed/needs-attention but MUST NOT delete around the possibly-live child.
+    const orch = orchestrator(); // constructs the ledger (creates the operations dir)
+    const wtId = idForBranch('feature/x');
+    const key = `acme/infra/${wtId}`;
+    writeFileSync(
+      join(workspaceRoot, 'operations', `${encodeURIComponent(key)}.json`),
+      JSON.stringify({
+        id: 'inflight-1',
+        type: 'worktree',
+        key,
+        state: 'running',
+        startedAt: 1000,
+      }),
+    );
+
+    await orch.reconcile();
+
+    // The op is unstuck (no longer `running`) ...
+    expect((await orch.getStatus('acme/infra', wtId))?.status).toBe('error');
+    // ... but NO destructive cleanup ran against the possibly-live mutation.
+    expect(fake.cleaned).not.toContain(wtId);
   });
 
   it('reconciles a stale running worktree op with a dead process on restart', async () => {

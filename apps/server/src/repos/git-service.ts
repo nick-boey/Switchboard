@@ -18,7 +18,8 @@ import { createGitRunner, type GitRunner } from './git-runner.js';
 
 export interface CloneOptions {
   signal?: AbortSignal;
-  onSpawn?(pid: number): void;
+  /** May return a promise; the runner awaits it so the pid is persisted before the process exit. */
+  onSpawn?(pid: number): void | Promise<void>;
   /** Override the clone source (tests use a local temp-git remote). */
   remoteUrl?: string;
 }

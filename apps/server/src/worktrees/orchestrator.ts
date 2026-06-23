@@ -145,7 +145,9 @@ export function createWorktreeOrchestrator(
           repoLock.run(repoId, async () => {
             await worktreeService.createWorktree(input, {
               signal,
-              onSpawn: (pid) => void setPid(pid),
+              // Await the durable pid persist before the runner awaits the git process (restart
+              // recovery): reconcile treats a missing pid conservatively, so we shrink that window.
+              onSpawn: (pid) => setPid(pid),
             });
           }),
       });
