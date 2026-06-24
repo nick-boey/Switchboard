@@ -13,6 +13,7 @@ const DEDICATED_SPECS = [
   /storybook-prototypes\..*\.spec\.ts/,
   /repo-clone\.spec\.ts/,
   /worktree\.spec\.ts/,
+  /session\.spec\.ts/,
 ];
 
 export default defineConfig({
@@ -49,6 +50,14 @@ export default defineConfig({
       // `start(ctx)` server, with github.com clones redirected to local source repos (no network).
       name: 'worktree',
       testMatch: /worktree\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
+    },
+    {
+      // The claude-session-launch flow: the session plug on/off round-trip + the liveness seam
+      // (a live session blocks a non-force delete), against a real `start(ctx)` server with a
+      // FAKED tmux boundary (no real `claude` login in CI) and local clones (no network).
+      name: 'session',
+      testMatch: /session\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
     },
     {

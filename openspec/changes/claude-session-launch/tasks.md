@@ -153,7 +153,7 @@
 
 ## 11. E2E (needs `just build` first)
 
-- [ ] 11.1 Add an `e2e/*.spec.ts` covering the plug on/off round-trip against the throwaway temp-git
+- [x] 11.1 Add an `e2e/*.spec.ts` covering the plug on/off round-trip against the throwaway temp-git
       fixture with a **faked tmux boundary** (no real `claude` login in CI), and asserting that a
       worktree with a live session **blocks a non-force delete** — proving the session-liveness seam
       end-to-end. Run `just build` then `just e2e`.
