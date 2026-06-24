@@ -6,13 +6,15 @@ import type {
 } from '@switchboard/shared';
 import { start } from '@switchboard/server';
 import { bootstrap } from './bootstrap.js';
+import { superviseServer } from './supervisor.js';
 
 /**
- * `switchboard` CLI — the thin shell (design Decision 8).
+ * `switchboard` CLI — the runtime's control plane (`runtime-cli-docker` Decision 1).
  *
- * Two commands only: `--version` and a LOCAL `start` that runs `loadConfig()` (Decision 6),
- * builds a `RuntimeContext`, and calls the server's `start(ctx)` for a loopback-only run.
- * No Docker / Tailscale orchestration — that is the later `runtime-cli-docker` change.
+ * `--version` plus a `start` that bootstraps config (Decision 4), builds a `RuntimeContext`, and
+ * runs the server's imported `start(ctx)` under SUPERVISION (Decision 5: graceful
+ * SIGINT/SIGTERM shutdown + bounded restart-on-crash). It imports the server's `start(ctx)` — it
+ * does not reimplement the server.
  */
 
 /** Injected at build time by tsup (`define`), sourced from this package's `package.json`. */
@@ -48,12 +50,14 @@ const telemetry: RuntimeTelemetry = {
 };
 
 /**
- * Run the local server: bootstrap config (`runtime-cli-docker` Decision 4), build the context, then
- * `start(ctx)`. A host `start` (no `--docker`) does NOT assert container isolation, so any serve
- * ingress it binds is bearer-only and a `trustServeIdentity` + serve-ingress pairing is rejected at
- * bootstrap before any listener binds.
+ * Run the local server under supervision: bootstrap config (`runtime-cli-docker` Decision 4), build
+ * the context, then supervise `start(ctx)` (Decision 5). A host `start` (no `--docker`) does NOT
+ * assert container isolation, so any serve ingress it binds is bearer-only and a
+ * `trustServeIdentity` + serve-ingress pairing is rejected at bootstrap before any listener binds.
+ * Returns the process exit code (0 on a clean signal-driven shutdown; non-zero if the supervisor
+ * gives up after repeated crashes).
  */
-async function runStart(): Promise<void> {
+async function runStart(): Promise<number> {
   const { config, assertNoHostPublication } = bootstrap();
   const ctx: RuntimeContext = {
     workspaceRoot: process.cwd(),
@@ -64,10 +68,12 @@ async function runStart(): Promise<void> {
     assertNoHostPublication,
   };
 
-  const handle = await start(ctx);
-  announceListening(handle);
-
-  await waitForShutdown(handle);
+  return superviseServer({
+    start: () => start(ctx),
+    shutdownSignal: installShutdownSignal(),
+    logger,
+    onListening: announceListening,
+  });
 }
 
 /**
@@ -83,26 +89,19 @@ function announceListening(handle: ServerHandle): void {
   }
 }
 
-/** Block until SIGINT/SIGTERM, then gracefully `close()` the handle and release the port. */
-function waitForShutdown(handle: ServerHandle): Promise<void> {
-  return new Promise((resolve) => {
-    let closing = false;
-    const shutdown = (signal: NodeJS.Signals): void => {
-      if (closing) return;
-      closing = true;
-      logger.info(`received ${signal}, shutting down`);
-      void handle
-        .close()
-        .catch((err) => logger.error('error during shutdown', { error: String(err) }))
-        .finally(() => {
-          process.off('SIGINT', shutdown);
-          process.off('SIGTERM', shutdown);
-          resolve();
-        });
-    };
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-  });
+/**
+ * Wire SIGINT/SIGTERM to an `AbortController` the supervisor watches: an aborted signal requests a
+ * graceful close (no restart) (`runtime-cli-docker` Decision 5). The supervisor performs the close.
+ */
+function installShutdownSignal(): AbortSignal {
+  const controller = new AbortController();
+  const onSignal = (signal: NodeJS.Signals): void => {
+    logger.info(`received ${signal}, shutting down`);
+    controller.abort();
+  };
+  process.once('SIGINT', () => onSignal('SIGINT'));
+  process.once('SIGTERM', () => onSignal('SIGTERM'));
+  return controller.signal;
 }
 
 /** Dispatch a single command. Returns the desired process exit code. */
@@ -124,8 +123,7 @@ async function main(argv: readonly string[]): Promise<number> {
       process.stderr.write(`switchboard: unexpected arguments for 'start': ${rest.join(' ')}\n`);
       return 1;
     }
-    await runStart();
-    return 0;
+    return runStart();
   }
 
   process.stderr.write(`switchboard: unknown command '${command}'\n\n${USAGE}`);

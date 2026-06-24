@@ -88,12 +88,12 @@
 
 ## 6. CLI: supervised server lifecycle (apps/cli)
 
-- [ ] 6.1 (red) Write `apps/cli/src/supervisor.test.ts` (using the 1.2 seam): a **signal-driven**
+- [x] 6.1 (red) Write `apps/cli/src/supervisor.test.ts` (using the 1.2 seam): a **signal-driven**
       shutdown closes the handle gracefully and does **not** restart; an **unexpected** failure
       restarts with **bounded** backoff; repeated rapid failures past the **give-up ceiling** stop
       restarting and yield a **non-zero** exit; the close releases the ingresses (asserted via the fake
       handle).
-- [ ] 6.2 (green) Implement the supervisor module in `apps/cli/src/` (bounded exponential backoff +
+- [x] 6.2 (green) Implement the supervisor module in `apps/cli/src/` (bounded exponential backoff +
       give-up ceiling; SIGINT/SIGTERM → graceful close with no restart; calls the injected
       server-starter), and wire `switchboard start` = bootstrap → supervisor.
 
