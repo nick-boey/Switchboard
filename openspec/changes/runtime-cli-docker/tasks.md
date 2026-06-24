@@ -6,13 +6,13 @@
       port, and assert both bind loopback only and that `close()` releases both. Add its own
       `dual-ingress.test.ts` proving the helper round-trips `/health` on each port and observes which
       ingress a request arrived on.
-- [ ] 1.2 Build the **supervisor test seam** in `apps/cli/src/testing/` (the GitRunner/TmuxRunner
+- [x] 1.2 Build the **supervisor test seam** in `apps/cli/src/testing/` (the GitRunner/TmuxRunner
       fake is the precedent): an injectable **server-starter** fake that resolves a fake
       `ServerHandle`, can be driven to **reject** or to **close unexpectedly** (no signal), and records
       `close()` calls. Add a self-test proving it is controllable per scenario. (Injected so cli unit
       tests never import the real `@switchboard/server` value and run against source under the root
       vitest `switchboard-source` condition — no build needed.)
-- [ ] 1.3 Build the **Tailscale/Docker orchestration runner seam + fake** in `apps/cli/src/testing/`:
+- [x] 1.3 Build the **Tailscale/Docker orchestration runner seam + fake** in `apps/cli/src/testing/`:
       an injectable `RuntimeRunner` that records argv invocations (`tailscaled`, `tailscale up`,
       `tailscale serve`) in order and is controllable for success/failure, mirroring `git-runner.ts`.
       Add a self-test proving invocation order and argv are observable.
