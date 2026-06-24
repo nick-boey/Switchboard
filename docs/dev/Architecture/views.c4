@@ -23,4 +23,11 @@ views {
 
     include *
   }
+
+  // API components contributed by worktree-management (graduated from its Planned overlay).
+  view worktree-management-api of Switchboard.Api {
+    title 'worktree-management — API components'
+
+    include *
+  }
 }

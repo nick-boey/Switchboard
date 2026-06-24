@@ -48,6 +48,17 @@ model {
       // Realises the base model's #planned `Switchboard.Api -> GitHub` at the component level.
       githubService -> GitHub 'Lists repositories and organisations (PAT-authenticated REST)'
       gitService -> GitHub 'Bare-clones the chosen repository over HTTPS'
+
+      // Component built by worktree-management (graduated from Planned/worktree-management.c4).
+      worktreeService = component 'Worktree Service' {
+        description 'Extends the Git service with worktree create/list/delete at repos/<owner>/<repo>/worktrees/<wt-id> on the canonical path-safe id scheme (slug--hash). Distinguishes an existing-remote branch from a new branch, derives per-worktree git status (the git lamp), enforces a server-side safe-to-delete re-check, and performs mandatory create-time collision detect-and-reject.'
+        technology 'git CLI, child_process'
+      }
+
+      worktreeService -> gitService 'Operates inside the existing bare clone (bareDir, completion marker)'
+      worktreeService -> operationLedger 'Runs each create as a worktree-typed tracked operation; serializes git mutations under a per-repo lock'
+      worktreeService -> credentialHelper 'Supplies the PAT for an existing-remote fetch over the git credential protocol'
+      worktreeService -> GitHub 'Fetches an existing remote branch over HTTPS'
     }
 
     Cli = container 'CLI' {
