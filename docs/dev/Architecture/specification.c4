@@ -43,9 +43,10 @@ specification {
   // arrives in later changes (git/github/tmux services, changes 3–6).
   tag planned
 
-  // `todo` marks elements/relationships authored by a `Planned/<change>.c4` overlay
-  // ahead of (or alongside) build. Graduated here from repo-clone-browse's overlay so
-  // the still-active overlays (worktree-management, claude-session-launch) keep resolving
-  // it; removed once the last overlay graduates.
+  // `todo` marks elements/relationships authored by a `Planned/<change>.c4` overlay ahead
+  // of (or alongside) build (see the model.c4 header). It lives here as permanent overlay
+  // vocabulary so any future `Planned/<change>.c4` overlay resolves it without re-declaring;
+  // the feature overlays (repo-clone-browse, worktree-management, claude-session-launch) have
+  // all graduated, so nothing references it today.
   tag todo
 }

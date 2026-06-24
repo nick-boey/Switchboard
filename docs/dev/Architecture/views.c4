@@ -30,4 +30,11 @@ views {
 
     include *
   }
+
+  // API components contributed by claude-session-launch (graduated from its Planned overlay).
+  view claude-session-launch-api of Switchboard.Api {
+    title 'claude-session-launch — API components'
+
+    include *
+  }
 }
