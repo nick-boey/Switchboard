@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import {
   idForBranch as defaultIdForBranch,
@@ -137,20 +145,48 @@ export function createWorktreeService(
     if (!isValidWorktreeId(wtId)) throw new WorktreeError('git-failure', 'invalid worktree id');
     return join(worktreesRoot(t), wtId);
   };
-  // Ownership marker: a sibling file written just before THIS operation mutates the destination,
-  // and removed only on success. Its CONTENT is the operation's unique token, so ownership is
-  // OPERATION-SCOPED: a marker proves the directory at `worktreePath` was created by THIS exact
-  // attempt only when its token matches. A path that exists with a missing/stale/foreign marker is
-  // someone else's data (a different op's partial, or a user's dir) and failure-cleanup never deletes
-  // it. A retry is a new operation with a new token, so a stale marker can never re-authorize a delete.
+  // Ownership marker: a sibling file written just AFTER this operation atomically claims the
+  // destination, and removed only on success. Its CONTENT is JSON `{ token, dev, ino }` — this
+  // attempt's unique token PLUS the filesystem-object identity (dev+ino) of the directory the
+  // exclusive create produced. Ownership is therefore OPERATION-SCOPED *and* IDENTITY-BOUND: a marker
+  // proves cleanup may delete `worktreePath` only when its token matches THIS op's token AND the
+  // directory still on disk is the SAME fs object (dev+ino). A path with a missing/stale/foreign
+  // marker — or one whose dir was removed and REPLACED by a different object at the same pathname —
+  // is someone else's data and failure-cleanup never recursively deletes it. A retry is a new
+  // operation with a new token, so a stale marker can never re-authorize a delete.
   const pendingMarkerPath = (t: RepoTarget, wtId: string): string =>
     `${worktreePath(t, wtId)}.pending`;
-  /** The token recorded in the ownership marker, or `null` when no marker is present. */
-  const markerToken = (marker: string): string | null =>
-    existsSync(marker) ? readFileSync(marker, 'utf8') : null;
-  /** True only when an ownership marker exists AND its token equals THIS operation's expected token. */
-  const ownedBy = (marker: string, expectedToken: string | undefined): boolean =>
-    expectedToken !== undefined && markerToken(marker) === expectedToken;
+  interface OwnershipMarker {
+    token: string;
+    dev: number;
+    ino: number;
+  }
+  /** Parse the ownership marker; `null` when absent or malformed (neither proves ownership). */
+  const readMarker = (marker: string): OwnershipMarker | null => {
+    if (!existsSync(marker)) return null;
+    try {
+      const parsed = JSON.parse(readFileSync(marker, 'utf8')) as Partial<OwnershipMarker>;
+      if (
+        typeof parsed.token === 'string' &&
+        typeof parsed.dev === 'number' &&
+        typeof parsed.ino === 'number'
+      ) {
+        return { token: parsed.token, dev: parsed.dev, ino: parsed.ino };
+      }
+    } catch {
+      // Unparseable marker content proves nothing — treat as no ownership.
+    }
+    return null;
+  };
+  /** The fs-object identity of the dir at `path` (lstat, never following a symlink), or `null`. */
+  const dirIdentity = (path: string): { dev: number; ino: number } | null => {
+    try {
+      const st = lstatSync(path);
+      return { dev: st.dev, ino: st.ino };
+    } catch {
+      return null; // path is gone or unreadable
+    }
+  };
 
   const git = async (args: string[], options: WorktreeRunOptions = {}): Promise<string> => {
     const result = await runner.capture(args, options);
@@ -280,12 +316,17 @@ export function createWorktreeService(
         }
         throw err;
       }
-      // Record THIS operation's atomic ownership of `path`: the marker's CONTENT is this op's token,
-      // written ONLY AFTER the exclusive create succeeded — so a matching-token marker is durable
-      // proof that THIS exact operation atomically created the destination (it can never be planted
-      // beside a foreign dir). Released on success (below); kept on failure for the token-gated
-      // cleanup, which therefore deletes only a destination this operation provably created.
-      writeFileSync(marker, token);
+      // Capture the filesystem-object identity (dev+ino) of the directory the exclusive create just
+      // produced, while we still hold the only reference to it.
+      const claimed = lstatSync(path);
+      // Record THIS operation's atomic ownership of `path`: the marker's CONTENT is JSON pairing this
+      // op's token with the claimed dir's identity, written ONLY AFTER the exclusive create succeeded
+      // — so a matching marker is durable proof that THIS exact operation atomically created the
+      // destination AND that the directory still there is the same object (it can never be planted
+      // beside a foreign dir, nor re-authorize deleting a replacement object at the same pathname).
+      // Released on success (below); kept on failure for the identity-bound, token-gated cleanup,
+      // which therefore deletes only a destination this operation provably created and still owns.
+      writeFileSync(marker, JSON.stringify({ token, dev: claimed.dev, ino: claimed.ino }));
 
       // Telemetry (Decision 7): sensitive values go under blocklisted keys so the redactor masks
       // them; the branch, `<wt-id>`/slug, and absolute path are never plain attributes.
@@ -416,22 +457,30 @@ export function createWorktreeService(
       const bare = gitService.bareDir(target);
       const path = worktreePath(target, wtId);
       const marker = pendingMarkerPath(target, wtId);
-      // Operation-scoped ownership proof. A directory that exists on disk is deletable ONLY when an
-      // ownership marker proves THIS operation atomically created it: the marker's token must equal
-      // the failed op's own `expectedToken` (from its metadata), and the marker is written only after
-      // the exclusive-create claim — so a matching token means this op created this destination. A
-      // path with a missing, stale, or foreign-token marker — or when no expected token is supplied —
-      // was NOT created by this operation (git also does not report it — `isWorktreeComplete` is
-      // false), so it is someone else's data. NEVER delete it. Only an owned (token-matching) or
-      // already-absent path proceeds.
-      const owned = ownedBy(marker, expectedToken);
-      if (existsSync(path) && !owned) return;
-      // Authorized by atomic-create + token ownership — NOT routed through the registration-guarded
-      // user-delete path, because a genuine partial this op created is by definition not yet a
-      // git-registered worktree. Removes only the owned leaf.
+      // Operation-scoped, IDENTITY-BOUND ownership proof. A directory on disk is deletable ONLY when
+      // the ownership marker proves THIS operation atomically created it AND it is still the same fs
+      // object. (1) TOKEN gate: the marker's token must equal the failed op's own `expectedToken`
+      // (from its metadata). A missing, stale, foreign, or malformed marker — or no expected token —
+      // means this op never created this path (git also does not report it), so it is someone else's
+      // data: NEVER touch the path or another op's marker.
+      const m = readMarker(marker);
+      if (expectedToken === undefined || m === null || m.token !== expectedToken) return;
+      // Our token matched. (2) IDENTITY gate: the directory must still be the SAME fs object (dev+ino)
+      // we claimed. If a DIFFERENT object now lives at the pathname (the partial was removed and
+      // REPLACED, e.g. with user data), a matching token alone must NOT authorize deleting it — clear
+      // only this op's now-stale marker and leave the replacement path untouched.
+      const id = dirIdentity(path);
+      if (id !== null && (id.dev !== m.dev || id.ino !== m.ino)) {
+        rmSync(marker, { force: true });
+        return;
+      }
+      // Either the path is gone (id === null) or its identity matches: removing the leaf is safe
+      // (rmSync on an absent path is a no-op) and the marker is genuinely ours to clear. Authorized by
+      // atomic-create + token + identity — NOT routed through the registration-guarded user-delete
+      // path, because a genuine partial this op created is by definition not yet a git-registered
+      // worktree. Removes only the owned leaf.
       await forceRemoveLeaf(bare, path);
-      // Clear the marker only when it was ours (a non-matching marker belongs to another op).
-      if (owned) rmSync(marker, { force: true });
+      rmSync(marker, { force: true });
     },
   };
 

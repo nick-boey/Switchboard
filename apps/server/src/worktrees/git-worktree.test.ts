@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { idForBranch } from '@switchboard/shared';
@@ -234,7 +242,10 @@ describe('worktree Git service', () => {
     mkdirSync(path, { recursive: true }); // creates worktrees/ parent too
     const sentinel = join(path, 'precious.txt');
     writeFileSync(sentinel, 'do-not-delete'); // someone else's data
-    writeFileSync(marker, 'token-A'); // a foreign/stale marker from a different operation
+    // A foreign/stale marker from a different operation (token-A) recording THIS dir's identity, so
+    // even identity matches — only the non-matching token must refuse op-B's cleanup.
+    const fid = lstatSync(path);
+    writeFileSync(marker, JSON.stringify({ token: 'token-A', dev: fid.dev, ino: fid.ino }));
 
     // A NEW create op with a DIFFERENT token → dest exists, marker is foreign → typed refusal.
     await expect(
@@ -273,9 +284,11 @@ describe('worktree Git service', () => {
     await expect(
       svc.createWorktree({ target: fx.target, branch, mode: 'new' }, { token: 'token-A' }),
     ).rejects.toBeInstanceOf(WorktreeError);
-    // The failed op left an on-disk partial AND its ownership marker carrying THIS op's token.
+    // The failed op left an on-disk partial AND its ownership marker carrying THIS op's token
+    // (paired with the claimed dir's fs identity, as JSON).
     expect(existsSync(path)).toBe(true);
-    expect(readFileSync(`${path}.pending`, 'utf8')).toBe('token-A');
+    const ownedMarker = JSON.parse(readFileSync(`${path}.pending`, 'utf8')) as { token: string };
+    expect(ownedMarker.token).toBe('token-A');
 
     // Cleanup with a NON-matching token must NOT delete the partial (it is not proven theirs).
     await svc.removeWorktreeIfIncomplete(fx.target, wtId, 'token-WRONG');
@@ -285,6 +298,59 @@ describe('worktree Git service', () => {
     // Cleanup with the MATCHING expected token removes the owned partial and clears the marker.
     await svc.removeWorktreeIfIncomplete(fx.target, wtId, 'token-A');
     expect(existsSync(path)).toBe(false);
+    expect(existsSync(`${path}.pending`)).toBe(false);
+  });
+
+  it('never deletes a REPLACEMENT directory whose FS identity differs from the marker, even when the token matches', async () => {
+    // FS-safety (identity binding): a matching `<path>.pending` token proves only that THIS op ONCE
+    // created a directory at that pathname. If the owned partial is removed and a NEW directory is
+    // planted at the same path (e.g. user data) before failure-cleanup runs, the stale token still
+    // matches — so authorization MUST additionally require the directory's FS-object identity
+    // (dev+ino) to equal the identity the marker recorded at claim time. A replacement object has a
+    // different identity → it is NEVER recursively deleted.
+    const branch = 'feature/replaced-partial';
+    const wtId = idForBranch(branch);
+    const path = join(worktreesDir(fx.ctx, fx.target), wtId);
+    const real = createGitRunner();
+    const runner: GitRunner = {
+      run: (a, o) => real.run(a, o),
+      capture: (a, o) => {
+        if (a.includes('worktree') && a.includes('add')) {
+          // git "partially" populated the (atomically-claimed) dir then failed mid-checkout.
+          writeFileSync(join(path, '.partial'), 'half-written');
+          return Promise.resolve({ code: 1, stdout: '' });
+        }
+        return real.capture(a, o);
+      },
+    };
+    const svc = createWorktreeService(fx.ctx, { gitService: fx.gitService, runner });
+
+    await expect(
+      svc.createWorktree({ target: fx.target, branch, mode: 'new' }, { token: 'token-A' }),
+    ).rejects.toBeInstanceOf(WorktreeError);
+    // The op left an owned partial (identity I1) and a marker recording token-A + I1.
+    const i1 = lstatSync(path).ino;
+
+    // BEFORE cleanup, the owned partial is removed and REPLACED with a different FS object at the
+    // SAME pathname (e.g. a user re-created data there). Build the replacement WHILE the original
+    // still occupies its inode, then swap it in, so I2 is deterministically distinct from I1.
+    const replacement = `${path}.replacement`;
+    mkdirSync(replacement, { recursive: true });
+    const sentinel = join(replacement, 'precious.txt');
+    writeFileSync(sentinel, 'do-not-delete');
+    rmSync(path, { recursive: true, force: true });
+    renameSync(replacement, path);
+    const sentinelAtPath = join(path, 'precious.txt');
+    expect(lstatSync(path).ino).not.toBe(i1); // a genuinely different FS object now lives at the path
+
+    // Cleanup with the MATCHING expected token must NOT delete the replacement: token matches, but
+    // the recorded FS identity does not, so authorization is denied — the replacement + sentinel SURVIVE.
+    await svc.removeWorktreeIfIncomplete(fx.target, wtId, 'token-A');
+
+    expect(existsSync(path)).toBe(true);
+    expect(existsSync(sentinelAtPath)).toBe(true);
+    expect(readFileSync(sentinelAtPath, 'utf8')).toBe('do-not-delete');
+    // This op's now-stale marker (it pointed at an object that no longer exists) is cleared.
     expect(existsSync(`${path}.pending`)).toBe(false);
   });
 

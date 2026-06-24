@@ -148,6 +148,21 @@ the idempotent path, not a collision.
   so a stale or foreign marker can never re-authorize deleting another operation's or a user's data
   (each create attempt, including a retry, carries a fresh unique token)
 
+#### Scenario: Cleanup authorization is bound to the directory's filesystem-object identity, not just its pathname
+
+- **WHEN** an operation atomically created a partial worktree directory at its `<wt-id>` path
+  (recording, alongside its token, the directory's filesystem-object identity — at least its
+  device and inode numbers — captured immediately after the exclusive create), and that partial is
+  later removed and **replaced** by a different directory object at the same pathname (e.g. user
+  data re-created there) before failure-cleanup for the operation runs
+- **THEN** failure-cleanup, even when given the operation's own matching token, MUST additionally
+  require the directory currently on disk to have the SAME recorded filesystem-object identity
+  before any recursive delete; a matching token whose directory identity DIFFERS (the path was
+  replaced) MUST NOT authorize deleting the replacement — cleanup leaves the replacement directory
+  and its contents intact and only clears its own now-stale marker — while a genuine partial whose
+  identity still matches is removed and a completed worktree is never removed, so a stale token
+  marker can never re-authorize deleting a different filesystem object that merely shares the pathname
+
 ### Requirement: Worktree creation runs as a tracked, serialized, recoverable operation
 
 The system SHALL run worktree creation through the shared filesystem operation ledger as a
