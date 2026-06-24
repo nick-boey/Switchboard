@@ -1,0 +1,198 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { rmSync } from 'node:fs';
+import { tmuxSessionName, type RepoTarget, type WorktreeSummary } from '@switchboard/shared';
+import { makeServerTestContext } from '../testing/operation-scaffolding.js';
+import { fakeTmuxRunner, type FakeTmuxRunner } from '../testing/tmux-runner.js';
+import { TmuxLaunchError, type TmuxRunner } from './tmux-runner.js';
+import { createSessionOrchestrator, type SessionWorktreeView } from './orchestrator.js';
+
+/**
+ * Session launch-through-the-ledger tests (task 4.1, design Decision 2). A launch spawns the
+ * detached session rooted at the worktree's path running `claude --remote-control`; duplicate /
+ * concurrent launches collapse to a single session (idempotent); the launch op key is in a
+ * namespace distinct from the worktree-create key; a launch subprocess failure resolves to a typed
+ * error leaving no live session; and liveness is always re-derived from tmux (a settled op whose
+ * session was killed externally reads off).
+ */
+
+const REPO = 'acme/widget-factory';
+const WT_ID = 'feature-login--0123456789ab';
+
+/** A minimal worktree view: every worktree exists by default; the path is the canonical layout. */
+function fakeWorktreeView(over: Partial<SessionWorktreeView> = {}): SessionWorktreeView {
+  return {
+    worktreePath: (t: RepoTarget, wtId: string) =>
+      `/ws/repos/${t.owner}/${t.repo}/worktrees/${wtId}`,
+    isWorktreeComplete: async () => true,
+    listWorktrees: async (): Promise<WorktreeSummary[]> => [],
+    ...over,
+  };
+}
+
+describe('session orchestrator — launch', () => {
+  let ctx: ReturnType<typeof makeServerTestContext>['ctx'];
+  let tmux: FakeTmuxRunner;
+
+  beforeEach(() => {
+    ({ ctx } = makeServerTestContext());
+    tmux = fakeTmuxRunner();
+  });
+  afterEach(() => {
+    rmSync(ctx.workspaceRoot, { recursive: true, force: true });
+  });
+
+  const make = (deps: Partial<Parameters<typeof createSessionOrchestrator>[1]> = {}) =>
+    createSessionOrchestrator(ctx, {
+      worktreeService: fakeWorktreeView(),
+      tmuxRunner: tmux,
+      ...deps,
+    });
+
+  it('launches a detached session rooted at the worktree path running claude --remote-control', async () => {
+    const orch = make();
+    const status = await orch.launchSession(REPO, WT_ID);
+    await orch.whenSettled(REPO, WT_ID);
+
+    const name = tmuxSessionName(REPO, WT_ID);
+    expect(tmux.calls).toHaveLength(1);
+    expect(tmux.calls[0]).toEqual({
+      name,
+      cwd: `/ws/repos/acme/widget-factory/worktrees/${WT_ID}`,
+      command: ['claude', '--remote-control'],
+    });
+    expect(await tmux.hasSession(name)).toBe(true);
+    // The launch returns the SESSION launch status, never the clone `OperationStatus` shape: the
+    // in-flight op reports the transient `starting` (not `cloning`), then settles `ready`.
+    expect(status.status).toBe('starting');
+    expect((await orch.getLaunchStatus(REPO, WT_ID))?.status).toBe('ready');
+  });
+
+  it('collapses concurrent duplicate launches to a single session (idempotent)', async () => {
+    const orch = make();
+    const [a, b] = await Promise.all([
+      orch.launchSession(REPO, WT_ID),
+      orch.launchSession(REPO, WT_ID),
+    ]);
+    await orch.whenSettled(REPO, WT_ID);
+    expect(a.operationId).toBe(b.operationId);
+    expect(tmux.calls).toHaveLength(1);
+  });
+
+  it('keys the launch op in a namespace distinct from the worktree-create key', async () => {
+    const orch = make();
+    const status = await orch.launchSession(REPO, WT_ID);
+    // The op key (carried as `repoId`) is the `session/...` namespace, never the bare worktree key.
+    expect(status.repoId).toBe(`session/${REPO}/${WT_ID}`);
+    expect(status.repoId).not.toBe(`${REPO}/${WT_ID}`);
+  });
+
+  it('resolves a tmux launch failure to a typed SESSION error (tmux-failure), no live session', async () => {
+    const failing: TmuxRunner = {
+      ...tmux,
+      newSession: async () => {
+        throw new TmuxLaunchError(1);
+      },
+    };
+    const orch = make({ tmuxRunner: failing });
+    await orch.launchSession(REPO, WT_ID);
+    const settled = await orch.whenSettled(REPO, WT_ID);
+    expect(settled?.status).toBe('error');
+    // A SESSION failure kind, never the clone `git-failure` kind.
+    expect(settled?.error?.kind).toBe('tmux-failure');
+    expect(await tmux.hasSession(tmuxSessionName(REPO, WT_ID))).toBe(false);
+  });
+
+  it('maps an unclassified launch failure to the SESSION launch-failed kind (not git-failure)', async () => {
+    const failing: TmuxRunner = {
+      ...tmux,
+      newSession: async () => {
+        throw new Error('something opaque');
+      },
+    };
+    const orch = make({ tmuxRunner: failing });
+    await orch.launchSession(REPO, WT_ID);
+    const settled = await orch.whenSettled(REPO, WT_ID);
+    expect(settled?.status).toBe('error');
+    expect(settled?.error?.kind).toBe('launch-failed');
+  });
+
+  it('refuses to launch for a worktree that does not exist (typed no-worktree error, no session)', async () => {
+    const orch = make({
+      worktreeService: fakeWorktreeView({ isWorktreeComplete: async () => false }),
+    });
+    await orch.launchSession(REPO, WT_ID);
+    const settled = await orch.whenSettled(REPO, WT_ID);
+    expect(settled?.status).toBe('error');
+    expect(settled?.error?.kind).toBe('no-worktree');
+    expect(tmux.calls).toHaveLength(0);
+  });
+
+  it('re-derives liveness from tmux: a settled op whose session was killed externally reads off', async () => {
+    const orch = make();
+    await orch.launchSession(REPO, WT_ID);
+    await orch.whenSettled(REPO, WT_ID);
+    const name = tmuxSessionName(REPO, WT_ID);
+    expect(await tmux.hasSession(name)).toBe(true);
+
+    // Killed outside Switchboard — the ledger record stays succeeded, but tmux truth is off.
+    tmux.setSession(name, false);
+    expect((await orch.getLaunchStatus(REPO, WT_ID))?.status).toBe('ready'); // stale settled record
+    expect(await tmux.hasSession(name)).toBe(false); // liveness re-derived from tmux
+  });
+
+  it('relaunch after an external kill does NOT reuse the stale succeeded record — it creates a new session', async () => {
+    const orch = make();
+    const first = await orch.launchSession(REPO, WT_ID);
+    await orch.whenSettled(REPO, WT_ID);
+    const name = tmuxSessionName(REPO, WT_ID);
+    expect(tmux.calls).toHaveLength(1);
+
+    // The session is killed outside Switchboard: the `succeeded` record is now STALE.
+    tmux.setSession(name, false);
+
+    // Activating the plug again must re-check the tmux marker (absent) and start a FRESH op that
+    // creates a NEW detached session — never no-op on the stale record.
+    const second = await orch.launchSession(REPO, WT_ID);
+    await orch.whenSettled(REPO, WT_ID);
+    expect(second.operationId).not.toBe(first.operationId);
+    expect(tmux.calls).toHaveLength(2);
+    expect(await tmux.hasSession(name)).toBe(true);
+  });
+});
+
+describe('session orchestrator — listSessions (tmux truth, existence + mapping only)', () => {
+  const wt = (wtId: string): WorktreeSummary => ({
+    wtId,
+    branch: 'b',
+    path: `p/${wtId}`,
+    dirty: false,
+    sync: 'up-to-date',
+  });
+  const target: RepoTarget = { owner: 'acme', repo: 'widget-factory' };
+  const liveId = 'feature-live--0123456789ab';
+  const idleId = 'feature-idle--0123456789ab';
+
+  it('lists only live sessions for the repo’s existing worktrees, mapped to (repoId, wtId)', async () => {
+    const { ctx } = makeServerTestContext();
+    const tmux = fakeTmuxRunner([tmuxSessionName(REPO, liveId)]);
+    const orch = createSessionOrchestrator(ctx, {
+      worktreeService: fakeWorktreeView({ listWorktrees: async () => [wt(liveId), wt(idleId)] }),
+      tmuxRunner: tmux,
+    });
+    const sessions = await orch.listSessions(target);
+    expect(sessions).toEqual([{ repoId: REPO, wtId: liveId, status: 'on' }]);
+    rmSync(ctx.workspaceRoot, { recursive: true, force: true });
+  });
+
+  it('does not surface an orphan whose worktree was deleted (not in the existing set)', async () => {
+    const { ctx } = makeServerTestContext();
+    // An orphaned session is live in tmux, but its worktree no longer exists → not derivable.
+    const tmux = fakeTmuxRunner([tmuxSessionName(REPO, 'deleted-wt--0123456789ab')]);
+    const orch = createSessionOrchestrator(ctx, {
+      worktreeService: fakeWorktreeView({ listWorktrees: async () => [wt(idleId)] }),
+      tmuxRunner: tmux,
+    });
+    expect(await orch.listSessions(target)).toEqual([]);
+    rmSync(ctx.workspaceRoot, { recursive: true, force: true });
+  });
+});

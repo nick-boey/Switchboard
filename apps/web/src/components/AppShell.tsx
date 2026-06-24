@@ -5,13 +5,16 @@ import {
   Stack,
   Text,
   Title,
+  UnstyledButton,
   useMantineTheme,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import type { SwitchboardTokens } from '../theme/theme';
+import { ReposFlow } from '../repos/ReposFlow';
+import { WorktreesHub } from '../worktrees/WorktreesHub';
 import { Plug } from '../ui/plug';
 import { Card } from '../ui/surface';
 import { SectionTitle } from '../ui/typography';
@@ -39,6 +42,7 @@ export interface AppShellProps {
  */
 export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellProps) {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(false);
+  const [view, setView] = useState<'home' | 'new-repo' | 'worktrees'>('home');
   const theme = useMantineTheme();
   const tokens = theme.other as SwitchboardTokens;
 
@@ -94,21 +98,43 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
       </MantineAppShell.Header>
 
       <MantineAppShell.Navbar p="md" data-testid="nav-rail">
-        <SectionTitle>Lines</SectionTitle>
+        <Stack gap="xs">
+          <SectionTitle>Lines</SectionTitle>
+          <UnstyledButton
+            data-testid="nav-worktrees"
+            onClick={() => setView('worktrees')}
+            style={{ fontSize: 'var(--mantine-font-size-sm)', fontWeight: 600 }}
+          >
+            Worktrees
+          </UnstyledButton>
+          <UnstyledButton
+            data-testid="nav-new-repository"
+            onClick={() => setView('new-repo')}
+            style={{ fontSize: 'var(--mantine-font-size-sm)', fontWeight: 600 }}
+          >
+            New repository
+          </UnstyledButton>
+        </Stack>
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
-        <Stack gap="md">
-          <Card title="Line status" data-testid="line-status">
-            <Text data-testid="line-status-value">
-              {lineStatus.isSuccess
-                ? lineStatus.data.message
-                : lineStatus.isError
-                  ? 'line check failed'
-                  : 'connecting…'}
-            </Text>
-          </Card>
-        </Stack>
+        {view === 'worktrees' ? (
+          <WorktreesHub client={client} />
+        ) : view === 'new-repo' ? (
+          <ReposFlow client={client} />
+        ) : (
+          <Stack gap="md">
+            <Card title="Line status" data-testid="line-status">
+              <Text data-testid="line-status-value">
+                {lineStatus.isSuccess
+                  ? lineStatus.data.message
+                  : lineStatus.isError
+                    ? 'line check failed'
+                    : 'connecting…'}
+              </Text>
+            </Card>
+          </Stack>
+        )}
       </MantineAppShell.Main>
     </MantineAppShell>
   );

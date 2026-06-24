@@ -45,15 +45,44 @@ export interface RuntimeContext {
   logger: RuntimeLogger;
   telemetry: RuntimeTelemetry;
   identity: RuntimeIdentity;
+  /**
+   * Runtime assertion (set by the CLI bootstrap, NOT by config — `runtime-cli-docker`
+   * Decisions 3/6): the dedicated serve ingress is bound only inside the container's network
+   * namespace and is NOT published to the host. This is the precondition that makes a serve
+   * ingress identity-eligible; the per-ingress trust flag is computed at bind time as
+   * `trustServeIdentity ∧ is-serve-ingress ∧ assertNoHostPublication`. Defaults to `false`
+   * (a host runtime, where any serve ingress is host-reachable and therefore bearer-only).
+   */
+  assertNoHostPublication?: boolean;
 }
 
 /**
- * Handle returned by `start(ctx)` for graceful shutdown (design Decision 2).
+ * Per-ingress loopback URLs resolved at bind time (`runtime-cli-docker` Decision 2). `direct`
+ * is present when the listen spec includes the direct/local loopback-TCP ingress; `serve` is
+ * present when it includes the dedicated serve ingress.
+ */
+export interface ServerHandleUrls {
+  direct?: string;
+  serve?: string;
+}
+
+/**
+ * Handle returned by `start(ctx)` for graceful shutdown (foundations Decision 2; the dual
+ * ingress is `runtime-cli-docker` Decision 2).
  *
- * TODO(section 2.4): the server entrypoint `start(ctx): Promise<ServerHandle>` lives in
- * `apps/server`; this type is the contract it fulfils.
+ * `url` reports the primary loopback URL — the direct ingress when one is present, otherwise the
+ * serve ingress. `urls` exposes each configured ingress's resolved loopback URL (so a caller can
+ * reach the serve port even when it was bound ephemerally). `close()` releases EVERY listener.
  */
 export interface ServerHandle {
   url: string;
+  urls: ServerHandleUrls;
   close(): Promise<void>;
+  /**
+   * Settles when the server stops on its OWN — i.e. unexpectedly, not via a supervisor-initiated
+   * `close()` (`runtime-cli-docker` Decision 5). The CLI supervisor races this against shutdown
+   * signals: if it settles, the server crashed and is restarted with bounded backoff. A graceful
+   * `close()` does NOT settle it. Optional: a handle that cannot surface a crash omits it.
+   */
+  whenClosed?: Promise<void>;
 }

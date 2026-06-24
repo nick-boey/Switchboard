@@ -7,7 +7,7 @@ import {
 } from '@opentelemetry/sdk-trace-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { ATTR_HTTP_REQUEST_METHOD, ATTR_URL_PATH } from '@opentelemetry/semantic-conventions';
-import { configSchema } from '@switchboard/shared';
+import { configSchema, idForBranch } from '@switchboard/shared';
 import { makeTestContext } from '@switchboard/shared/testing';
 import {
   RedactingSpanProcessor,
@@ -151,6 +151,40 @@ describe('telemetryMiddleware (semconv span per request)', () => {
     const span = spans[0];
     expect(span.attributes[ATTR_HTTP_REQUEST_METHOD]).toBe('GET');
     expect(span.attributes[ATTR_URL_PATH]).toBe('/health');
+  });
+
+  it('uses the matched route TEMPLATE for the span name and url.path (never a concrete <wt-id>/slug)', async () => {
+    const memory = new InMemorySpanExporter();
+    provider = new NodeTracerProvider({
+      spanProcessors: [new RedactingSpanProcessor(new SimpleSpanProcessor(memory))],
+    });
+    const tracer = provider.getTracer('test');
+    const app = createApp(makeTestContext(), { tracer });
+
+    // A worktree id whose slug echoes a sensitive branch name — the no-leak guarantee treats the
+    // branch (and the slug derived from it) as secret, so it must NOT appear in any exported span.
+    const branch = 'fix/CVE-2026-private-embargo';
+    const wtId = idForBranch(branch); // `<slug>--<hash>` — slug = `fix-cve-2026-private-embargo`
+    const slug = wtId.split('--')[0];
+
+    const res = await app.request(`/worktrees/acme/infra/${wtId}/status`, {
+      headers: { Authorization: 'Bearer test-bearer-token' },
+    });
+    // No such operation on disk → 404, but the request is still traced.
+    expect(res.status).toBe(404);
+
+    await provider.forceFlush();
+    const spans = memory.getFinishedSpans();
+    expect(spans.length).toBeGreaterThanOrEqual(1);
+
+    // NEITHER the span name NOR any attribute value may carry the wt-id / slug.
+    const haystack = spans
+      .flatMap((s) => [s.name, ...Object.values(s.attributes).map((v) => String(v))])
+      .join('\n');
+    expect(haystack).not.toContain(slug);
+    expect(haystack).not.toContain(wtId);
+    // The low-cardinality template IS recorded (proves the route was traced, not dropped).
+    expect(spans.some((s) => s.name === 'GET /worktrees/:owner/:repo/:wtId/status')).toBe(true);
   });
 
   it('console export writes spans to the console (and not elsewhere)', async () => {

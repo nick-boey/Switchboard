@@ -9,6 +9,12 @@ export interface TempGitRepo {
   path: string;
   /** Run a git subcommand inside the repo and return its stdout. */
   git(...args: string[]): string;
+  /**
+   * Seed a known branch carrying one commit, then return to the previous branch — so a worktree
+   * test has an "existing remote branch" to check out (worktree-management group 1.1). Idempotent
+   * enough for a fresh fixture; returns the branch name for convenience.
+   */
+  seedBranch(name: string): string;
   /** Remove the repository. Idempotent. */
   cleanup(): void;
 }
@@ -33,10 +39,19 @@ export function createTempGitRepo(): TempGitRepo {
   git('config', 'commit.gpgsign', 'false');
   git('commit', '--allow-empty', '--quiet', '--message', 'init');
 
+  const currentBranch = (): string => git('rev-parse', '--abbrev-ref', 'HEAD');
+
   let cleaned = false;
   return {
     path,
     git,
+    seedBranch(name: string): string {
+      const previous = currentBranch();
+      git('checkout', '--quiet', '-b', name);
+      git('commit', '--allow-empty', '--quiet', '--message', `seed ${name}`);
+      git('checkout', '--quiet', previous);
+      return name;
+    },
     cleanup(): void {
       if (cleaned) return;
       cleaned = true;

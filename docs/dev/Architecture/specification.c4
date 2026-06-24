@@ -28,9 +28,25 @@ specification {
     }
   }
 
+  // Components live inside containers (e.g. the services inside `Switchboard.Api`),
+  // graduated from the `Planned/<change>.c4` overlays as each change is built.
+  element component {
+    style {
+      shape rectangle
+      opacity 20%
+    }
+  }
+
   // --- Tags ----------------------------------------------------------------
 
   // `planned` marks parts of the skeleton that are scaffolded but whose behaviour
   // arrives in later changes (git/github/tmux services, changes 3–6).
   tag planned
+
+  // `todo` marks elements/relationships authored by a `Planned/<change>.c4` overlay ahead
+  // of (or alongside) build (see the model.c4 header). It lives here as permanent overlay
+  // vocabulary so any future `Planned/<change>.c4` overlay resolves it without re-declaring;
+  // the feature overlays (repo-clone-browse, worktree-management, claude-session-launch) have
+  // all graduated, so nothing references it today.
+  tag todo
 }

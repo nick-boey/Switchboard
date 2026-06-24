@@ -1,32 +1,42 @@
-import { loadConfig } from '@switchboard/shared/node';
 import type {
+  AppConfig,
   RuntimeContext,
   RuntimeLogger,
   RuntimeTelemetry,
   ServerHandle,
 } from '@switchboard/shared';
 import { start } from '@switchboard/server';
+import { bootstrap } from './bootstrap.js';
+import { resolveAuthKeyFile } from './authkey.js';
+import { superviseServer } from './supervisor.js';
+import { createRuntimeRunner } from './runtime-runner.js';
+import { DEFAULT_SERVE_PORT, runDockerBringUp } from './docker.js';
 
 /**
- * `switchboard` CLI — the thin shell (design Decision 8).
+ * `switchboard` CLI — the runtime's control plane (`runtime-cli-docker` Decision 1).
  *
- * Two commands only: `--version` and a LOCAL `start` that runs `loadConfig()` (Decision 6),
- * builds a `RuntimeContext`, and calls the server's `start(ctx)` for a loopback-only run.
- * No Docker / Tailscale orchestration — that is the later `runtime-cli-docker` change.
+ * `--version` plus a `start` that bootstraps config (Decision 4), builds a `RuntimeContext`, and
+ * runs the server's imported `start(ctx)` under SUPERVISION (Decision 5: graceful
+ * SIGINT/SIGTERM shutdown + bounded restart-on-crash). `start --docker` (Decision 6) is the
+ * in-container supervisor: it additionally brings up `tailscaled` (userspace) + `tailscale serve`
+ * in front of the dedicated serve ingress. It imports the server's `start(ctx)` — it does not
+ * reimplement the server.
  */
 
 /** Injected at build time by tsup (`define`), sourced from this package's `package.json`. */
 declare const __CLI_VERSION__: string;
 
-const USAGE = `switchboard — local control plane for the Switchboard runtime
+const USAGE = `switchboard — control plane for the Switchboard runtime
 
 Usage:
-  switchboard start        Boot the loopback server for a local run
-  switchboard --version    Print the CLI version
-  switchboard --help       Show this help
+  switchboard start            Boot the loopback server for a local run (supervised)
+  switchboard start --docker   In-container supervisor: tailscaled + tailscale serve + server
+  switchboard --version        Print the CLI version
+  switchboard --help           Show this help
 
-This is the local thin shell (design Decision 8). Docker/Tailscale orchestration
-is provided by a later change (runtime-cli-docker).
+A local 'start' is bearer-only. '--docker' brings up userspace Tailscale and exposes the server
+via 'tailscale serve' over a dedicated, non-host-published loopback serve port; see
+docs/user/running-switchboard.md for the Docker run (volumes, mounted secrets, credentials).
 `;
 
 /** Logs go to stderr so stdout stays reserved for the one machine-readable line (the URL). */
@@ -47,44 +57,98 @@ const telemetry: RuntimeTelemetry = {
   startSpan: () => ({ end: () => undefined }),
 };
 
-/** Run the local server: parse config (Decision 6), build the context, then `start(ctx)`. */
-async function runStart(): Promise<void> {
-  const config = loadConfig();
+/**
+ * Run the local server under supervision: bootstrap config (`runtime-cli-docker` Decision 4), build
+ * the context, then supervise `start(ctx)` (Decision 5). A host `start` (no `--docker`) does NOT
+ * assert container isolation, so any serve ingress it binds is bearer-only and a
+ * `trustServeIdentity` + serve-ingress pairing is rejected at bootstrap before any listener binds.
+ * Returns the process exit code (0 on a clean signal-driven shutdown; non-zero if the supervisor
+ * gives up after repeated crashes).
+ */
+async function runStart(): Promise<number> {
+  const { config, assertNoHostPublication } = bootstrap();
   const ctx: RuntimeContext = {
     workspaceRoot: process.cwd(),
     config,
     logger,
     telemetry,
     identity: { login: null, source: 'none' },
+    assertNoHostPublication,
   };
 
-  const handle = await start(ctx);
-  // stdout carries the single machine-readable fact callers parse: the bound loopback URL.
-  process.stdout.write(`Switchboard listening on ${handle.url}\n`);
-
-  await waitForShutdown(handle);
+  return superviseServer({
+    start: () => start(ctx),
+    shutdownSignal: installShutdownSignal(),
+    logger,
+    onListening: announceListening,
+  });
 }
 
-/** Block until SIGINT/SIGTERM, then gracefully `close()` the handle and release the port. */
-function waitForShutdown(handle: ServerHandle): Promise<void> {
-  return new Promise((resolve) => {
-    let closing = false;
-    const shutdown = (signal: NodeJS.Signals): void => {
-      if (closing) return;
-      closing = true;
-      logger.info(`received ${signal}, shutting down`);
-      void handle
-        .close()
-        .catch((err) => logger.error('error during shutdown', { error: String(err) }))
-        .finally(() => {
-          process.off('SIGINT', shutdown);
-          process.off('SIGTERM', shutdown);
-          resolve();
-        });
-    };
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
+/**
+ * `start --docker` (`runtime-cli-docker` Decision 6): the in-container supervisor. Bootstraps with
+ * the container-isolation assertion (no host publication — the precondition for serve-identity
+ * eligibility), ensures the dedicated serve ingress is configured, and brings up `tailscaled` +
+ * `tailscale serve` in front of `start(ctx)` via the real orchestration runner. The auth key is
+ * supplied to `tailscale up` BY FILE REFERENCE (the mounted secret path), so its value never enters
+ * argv or logs — never baked into the image.
+ */
+async function runDocker(): Promise<number> {
+  const { config, configDir, assertNoHostPublication } = bootstrap({
+    assertNoHostPublication: true,
   });
+  const servePort = config.listen.serve?.port ?? DEFAULT_SERVE_PORT;
+  // The server must bind the dedicated serve ingress `tailscale serve` proxies to; keep the direct
+  // ingress too for in-container probing (Decision 6 step 3).
+  const dockerConfig: AppConfig = {
+    ...config,
+    listen: { direct: config.listen.direct ?? { port: 0 }, serve: { port: servePort } },
+  };
+  const ctx: RuntimeContext = {
+    workspaceRoot: process.cwd(),
+    config: dockerConfig,
+    logger,
+    telemetry,
+    identity: { login: null, source: 'none' },
+    assertNoHostPublication,
+  };
+
+  return runDockerBringUp({
+    runner: createRuntimeRunner(),
+    start: () => start(ctx),
+    shutdownSignal: installShutdownSignal(),
+    logger,
+    servePort,
+    authKeyFile: resolveAuthKeyFile(configDir),
+    onListening: announceListening,
+  });
+}
+
+/**
+ * stdout carries the machine-readable facts callers parse: the bound loopback URL of each ingress,
+ * tagged so a consumer (e.g. the packaged-CLI smoke test) can address the direct vs serve port.
+ */
+function announceListening(handle: ServerHandle): void {
+  if (handle.urls.direct) {
+    process.stdout.write(`Switchboard listening (direct) on ${handle.urls.direct}\n`);
+  }
+  if (handle.urls.serve) {
+    process.stdout.write(`Switchboard listening (serve) on ${handle.urls.serve}\n`);
+  }
+}
+
+/**
+ * Wire SIGINT/SIGTERM to an `AbortController` the supervisor watches: an aborted signal requests a
+ * graceful close (no restart) (`runtime-cli-docker` Decision 5). The supervisor performs the close.
+ */
+function installShutdownSignal(): AbortSignal {
+  const controller = new AbortController();
+  const onSignal = (signal: NodeJS.Signals): void => {
+    logger.info(`received ${signal}, shutting down`);
+    controller.abort();
+  };
+  process.once('SIGINT', () => onSignal('SIGINT'));
+  process.once('SIGTERM', () => onSignal('SIGTERM'));
+  return controller.signal;
 }
 
 /** Dispatch a single command. Returns the desired process exit code. */
@@ -102,12 +166,13 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 
   if (command === 'start') {
-    if (rest.length > 0) {
-      process.stderr.write(`switchboard: unexpected arguments for 'start': ${rest.join(' ')}\n`);
+    const docker = rest.includes('--docker');
+    const unknown = rest.filter((arg) => arg !== '--docker');
+    if (unknown.length > 0) {
+      process.stderr.write(`switchboard: unexpected arguments for 'start': ${unknown.join(' ')}\n`);
       return 1;
     }
-    await runStart();
-    return 0;
+    return docker ? runDocker() : runStart();
   }
 
   process.stderr.write(`switchboard: unknown command '${command}'\n\n${USAGE}`);

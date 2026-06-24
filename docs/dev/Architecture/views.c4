@@ -16,4 +16,25 @@ views {
 
     include *
   }
+
+  // API components contributed by repo-clone-browse (graduated from its Planned overlay).
+  view repo-clone-browse-api of Switchboard.Api {
+    title 'repo-clone-browse — API components'
+
+    include *
+  }
+
+  // API components contributed by worktree-management (graduated from its Planned overlay).
+  view worktree-management-api of Switchboard.Api {
+    title 'worktree-management — API components'
+
+    include *
+  }
+
+  // API components contributed by claude-session-launch (graduated from its Planned overlay).
+  view claude-session-launch-api of Switchboard.Api {
+    title 'claude-session-launch — API components'
+
+    include *
+  }
 }

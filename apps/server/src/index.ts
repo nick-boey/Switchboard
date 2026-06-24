@@ -8,6 +8,8 @@
 export { start } from './server.js';
 export { createApp } from './app.js';
 export type { AppEnv, AppType, CreateAppOptions } from './app.js';
+// The tmux seam type — E2E/integration callers inject a fake tmux boundary (no real `claude` login).
+export type { TmuxRunner } from './sessions/tmux-runner.js';
 export { createServerClient } from './client.js';
 export type { ServerClient } from './client.js';
 export {

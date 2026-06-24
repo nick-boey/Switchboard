@@ -1,10 +1,6 @@
 ---
 title: 'Plan: Switchboard MVP'
 openspec-changes:
-  - ui-prototypes-mvp
-  - repo-clone-browse
-  - worktree-management
-  - claude-session-launch
   - runtime-cli-docker
 ---
 
@@ -131,10 +127,10 @@ prose in `tasks.md`).
 | **0** | **runtime spike** _(throwaway investigation — not an OpenSpec change)_ | —                 | Prove the riskiest runtime assumptions **before** `foundations` bakes them in: Tailscale-in-Docker (`serve`, bind), the **Tailscale-identity-header auth path** behind `serve`, config-volume persistence, **Claude credential persistence** in a container, and process/tmux supervision. Output: a findings note under `docs/dev/spikes/`; throwaway code lives outside the monorepo. Go/no-go on the assumptions feeds `foundations` design. |
 | 1     | `foundations` ✅ _archived_                                            | switch-feature    | Monorepo, TS, web shell + Mantine + retro design tokens, Storybook, Hono skeleton + RPC wiring, **auth gate + loopback bind + CORS + bind-address tests**, **RuntimeContext** abstraction, Vitest, Playwright E2E harness (temp-git fixture), Just, OTel instrumentation + redaction policy, `site/` + LikeC4, `shared` package. **Builds the test harness everything else needs.**                                                             |
 | 1b    | `prototype-storybook-harness` ✅ _archived_                            | switch-feature    | Stand up the **dedicated prototype-viewing Storybook config** (renders `src/prototypes/**` while the production config keeps them excluded), the `definePrototypeMeta` helper, the location-based indexer (titles + quarantine tags), and a `storybook:prototypes` script. Foundations deferred this to "the `switch-ui-prototype` workflow"; it is the prerequisite that makes the prototyping stage runnable.                                 |
-| 2     | `ui-prototypes-mvp`                                                    | switch-feature-ui | Lightweight **upfront** prototypes (hybrid strategy): the **flat** design language matured into production primitives + the core screens, desktop + mobile. **Gate passed (2026-06-22):** screens re-centred on a **worktrees hub** (repos → worktrees with a per-worktree **plug** as the session affordance — no standalone session-list screen, no launch handoff toast); git/PR status lamps are **display-only** (interactive helpers → Future features). The gate decisions seed the specs of changes 3–5.                                                                                                                                                          |
-| 3     | `repo-clone-browse`                                                    | switch-feature    | List GitHub repos/orgs (PAT) + bare clone → `repos/<repo-id>/.bare` + list cloned repos.                                                                                                                                                                                                                                                                                                                                                        |
-| 4     | `worktree-management`                                                  | switch-feature    | Create worktree + branch → `repos/<repo-id>/worktrees/<wt-id>`; canonical ID scheme; "branch exists on remote" vs "new branch".                                                                                                                                                                                                                                                                                                                 |
-| 5     | `claude-session-launch`                                                | switch-feature    | Launch `claude --remote-control` detached in tmux; list/track sessions via the path-safe naming scheme.                                                                                                                                                                                                                                                                                                                                         |
+| 2     | `ui-prototypes-mvp` ✅ _archived_                                      | switch-feature-ui | Lightweight **upfront** prototypes (hybrid strategy): the **flat** design language matured into production primitives + the core screens, desktop + mobile. **Gate passed (2026-06-22):** screens re-centred on a **worktrees hub** (repos → worktrees with a per-worktree **plug** as the session affordance — no standalone session-list screen, no launch handoff toast); git/PR status lamps are **display-only** (interactive helpers → Future features). The gate decisions seed the specs of changes 3–5.                                                                                                                                                          |
+| 3     | `repo-clone-browse` ✅ _archived_                                      | switch-feature    | List GitHub repos/orgs (PAT) + bare clone → `repos/<repo-id>/.bare` + list cloned repos.                                                                                                                                                                                                                                                                                                                                                        |
+| 4     | `worktree-management` ✅ _archived_                                    | switch-feature    | Create worktree + branch → `repos/<repo-id>/worktrees/<wt-id>`; canonical ID scheme; "branch exists on remote" vs "new branch".                                                                                                                                                                                                                                                                                                                 |
+| 5     | `claude-session-launch` ✅ _archived_                                  | switch-feature    | Launch `claude --remote-control` detached in tmux; list/track sessions via the path-safe naming scheme.                                                                                                                                                                                                                                                                                                                                         |
 | 6     | `runtime-cli-docker`                                                   | switch-feature    | TypeScript `switchboard` CLI, `~/.switchboard` config, Docker image, Tailscale bring-up — **productionizing the spike-0 findings**.                                                                                                                                                                                                                                                                                                             |
 
 **Dependencies**
@@ -232,6 +228,14 @@ TDD is mandatory across the programme.
 - **[Risk] Long-running operation state** — partial failures, concurrency, recovery.
   Mitigation: the filesystem operation ledger + lock, designed in the owning changes and
   E2E-tested.
+- **[Known limitation] Worktree FS-safety boundary (from `worktree-management`).** Worktree
+  create/delete/cleanup is hardened against **same-app concurrency** and **accidental
+  pre-existing directories** — an atomic exclusive-`mkdir` claim, an operation-scoped token,
+  FS-identity-bound cleanup, and registration-guarded delete. It is **not** fully hardened
+  against a concurrent **foreign** process racing the private worktrees tree — out of scope
+  for a single-user localhost MVP. Residual edge: a `dev`+`ino` inode-reallocation race.
+  Tightening this (e.g. a foreign-process-safe claim) is deferred until the multi-user /
+  container-per-user path makes it relevant.
 - **Claude `--remote-control` auth spike: skipped.** Remote control rides the host's
   existing `claude` login; once `claude` is authenticated on the host (out-of-band; in
   Docker, persist/mount the credentials — proven in spike 0), launching it detached
@@ -246,9 +250,13 @@ The architecture must not preclude these; they are explicitly out of MVP scope.
   confirmation gate, 2026-06-22 — the lamps render status only; clicking them is inert).
   A future stage makes them interactive: **git helpers** (status / fetch / pull / push
   and related commands behind the git lamp) and **GitHub helpers** (PR checks / review
-  state / merge behind the PR lamp). The prototypes already sketch the deferred
-  "indicator action" modal (`apps/web/src/prototypes/ui-prototypes-mvp/worktrees.stories.tsx`
-  → the `MobileIndicatorAction` story).
+  state / merge behind the PR lamp). The deferred "indicator action" modal was sketched in the
+  `ui-prototypes-mvp` worktrees prototype (now retired with that change's archive).
+- **Settings page.** A drawer-reached settings surface (read-only GitHub status, storage / clone
+  location, and remote-access status in pressed panels) was prototyped and its information
+  architecture confirmed in `ui-prototypes-mvp`, but **no MVP change built it** — the read-only
+  settings surface is deferred. The architecture already exposes this state (the `~/.switchboard`
+  JSON config + auth gate), so surfacing it is additive.
 - Multi-user (container-per-user).
 - Worktrees from GitHub issues + linked PRs.
 - Delete worktrees/branches.

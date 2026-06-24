@@ -3,3 +3,10 @@
 export { makeTestContext } from './runtime-context.js';
 export { createTempGitRepo } from './temp-git.js';
 export type { TempGitRepo } from './temp-git.js';
+export { createFakeGitHub } from './github-fake.js';
+export type {
+  FakeGitHub,
+  FakeGitHubFailure,
+  FakeGitHubFixtures,
+  FakeGitHubRepo,
+} from './github-fake.js';

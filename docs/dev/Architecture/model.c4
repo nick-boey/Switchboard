@@ -19,6 +19,69 @@ model {
     Api = container 'API Server' {
       description 'Hono server exposed programmatically via start(ctx: RuntimeContext). Loopback-bound behind a reject-by-default auth gate (Tailscale identity + bearer fallback), with /health and OpenTelemetry redaction.'
       technology 'Hono, Zod, OpenTelemetry'
+
+      // Components built by repo-clone-browse (graduated from Planned/repo-clone-browse.c4).
+      githubService = component 'GitHub Service' {
+        description 'Lists the authenticated account, organisations, and accessible repositories via PAT-authenticated GitHub REST, behind an OAuth-ready provider interface. Maps failures to typed errors without leaking GitHub error bodies.'
+        technology 'fetch, Zod'
+      }
+
+      gitService = component 'Git Service' {
+        description 'Bare-clones a validated <owner>/<repo> to ~/.switchboard/repos/<owner>/<repo>/.bare via the git CLI (plain HTTPS URL, no embedded credentials) and lists completed clones from disk.'
+        technology 'git CLI, child_process'
+      }
+
+      operationLedger = component 'Operation Ledger + Lock' {
+        description 'Filesystem-backed operation records + per-key lock under ~/.switchboard: idempotency, serialization, abort/cancellation as a single terminal transition, and restart recovery. Reused by later long-running work.'
+        technology 'Node fs'
+      }
+
+      credentialHelper = component 'Credential Helper' {
+        description "Supplies the PAT to git over the credential protocol from a 600-mode token file in ~/.switchboard, wired per-invocation with host-scoped -c so it is never persisted into the cloned bare config."
+        technology 'git credential protocol'
+      }
+
+      // Internal wiring (component-level).
+      gitService -> operationLedger 'Runs each clone as a tracked operation'
+      gitService -> credentialHelper 'Obtains the PAT over the git credential protocol'
+
+      // Realises the base model's #planned `Switchboard.Api -> GitHub` at the component level.
+      githubService -> GitHub 'Lists repositories and organisations (PAT-authenticated REST)'
+      gitService -> GitHub 'Bare-clones the chosen repository over HTTPS'
+
+      // Component built by worktree-management (graduated from Planned/worktree-management.c4).
+      worktreeService = component 'Worktree Service' {
+        description 'Extends the Git service with worktree create/list/delete at repos/<owner>/<repo>/worktrees/<wt-id> on the canonical path-safe id scheme (slug--hash). Distinguishes an existing-remote branch from a new branch, derives per-worktree git status (the git lamp), enforces a server-side safe-to-delete re-check, and performs mandatory create-time collision detect-and-reject.'
+        technology 'git CLI, child_process'
+      }
+
+      worktreeService -> gitService 'Operates inside the existing bare clone (bareDir, completion marker)'
+      worktreeService -> operationLedger 'Runs each create as a worktree-typed tracked operation; serializes git mutations under a per-repo lock'
+      worktreeService -> credentialHelper 'Supplies the PAT for an existing-remote fetch over the git credential protocol'
+      worktreeService -> GitHub 'Fetches an existing remote branch over HTTPS'
+
+      // Components built by claude-session-launch (graduated from Planned/claude-session-launch.c4).
+      sessionService = component 'Session Service' {
+        description 'Launches claude --remote-control DETACHED in a tmux session rooted at the worktree, tracked as a session-typed operation (keyed session/<repo-id>/<wt-id>, distinct from the worktree-create key) for idempotency + the transient starting state. Stops a session by killing its tmux session; launch and stop serialize on one per-session lock via a drain-then-lock loop. Lists existence + worktree mapping only — liveness is always re-derived from tmux.'
+        technology 'tmux CLI, child_process'
+      }
+
+      sessionProbe = component 'Session Liveness Probe' {
+        description 'Tmux-backed liveness: hasActiveSession(repoId, wtId) forward-derives the path-safe tmux session name (slug--hash, sb- prefix) from (repo-id, wt-id) and tests tmux existence — never decoding a name. Depends ONLY on tmux + the derived name (no worktree back-dependency), so wiring it into the worktree safe-to-delete seam introduces no cycle.'
+        technology 'tmux CLI'
+      }
+
+      sessionService -> operationLedger 'Runs each launch as a session-typed tracked operation; serializes launch/stop on one per-session lock'
+      sessionService -> worktreeService 'Obtains the worktree path for launch and the existing-worktree candidate set for listing'
+      sessionService -> sessionProbe 'Derives session liveness for the per-repo listing'
+
+      // Cross-change seam: the worktree safe-to-delete predicate reads liveness from the tmux-only
+      // probe — the ONLY worktree->session edge, pointing at the probe (no back-edge), so no cycle.
+      worktreeService -> sessionProbe 'Reads tmux-backed session liveness for the safe-to-delete predicate (the hasActiveSession seam)'
+
+      // Realises the base model's #planned `Switchboard.Api -> TmuxHost` at the component level.
+      sessionService -> TmuxHost 'Launches claude --remote-control detached in a tmux session (argv, no shell) and kills it on stop'
+      sessionProbe -> TmuxHost 'Tests tmux session existence by forward-deriving the session name'
     }
 
     Cli = container 'CLI' {

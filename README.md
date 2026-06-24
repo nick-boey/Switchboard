@@ -110,33 +110,45 @@ etc.) if you prefer to invoke pnpm directly. Unit tests resolve workspace packag
 TypeScript source (via the `switchboard-source` export condition), so `just test` does not
 require a prior `just build`; Playwright resolves the built `dist`, so `just e2e` does.
 
-## Running Switchboard locally
+## Running Switchboard
 
-The CLI is the local entrypoint. `switchboard start` loads `~/.switchboard/config.json`
-(creating it with a freshly generated bearer token and secure `600` permissions on first
-run), builds a `RuntimeContext`, and calls the server's `start(ctx)` for a loopback-bound
-local run. Build first, then run the bundled `switchboard` bin:
+Switchboard is distributed on **npm** as the `switchboard` bin. `switchboard start` bootstraps
+`~/.switchboard/config.json` (a freshly generated bearer token and secure `600` permissions on
+first run), builds a `RuntimeContext`, and supervises the server's `start(ctx)` for a loopback-bound
+local run:
+
+```sh
+npx switchboard start        # one-off
+# or: npm i -g switchboard && switchboard start
+switchboard --version
+```
+
+A local `start` binds `127.0.0.1` only and is **bearer-only** — it serves an unauthenticated
+`GET /health` plus the placeholder `POST /echo` route behind the reject-by-default auth gate
+(authenticate with the bearer token from `~/.switchboard/config.json`):
+
+```sh
+curl http://127.0.0.1:PORT/health    # -> {"status":"ok"} (substitute the printed port)
+```
+
+To **run on the tailnet (Docker)** — the image brings up userspace Tailscale and exposes the app via
+`tailscale serve` over a dedicated, non-host-published loopback serve port, with named volumes and
+mounted secrets — see **[`docs/user/running-switchboard.md`](docs/user/running-switchboard.md)**.
+
+From a workspace checkout you can also run the bin straight from the build output:
 
 ```sh
 just build
-node apps/cli/dist/index.js --version    # print the CLI version
-node apps/cli/dist/index.js start        # boot the loopback server; prints its 127.0.0.1 URL
+node apps/cli/dist/index.js start    # boot the loopback server; prints its 127.0.0.1 URL
 ```
 
-`start` binds `127.0.0.1` only and serves an unauthenticated `GET /health` plus the
-placeholder `POST /echo` route behind the reject-by-default auth gate. From another shell
-you can check the health endpoint (substitute the port the command printed):
-
-```sh
-curl http://127.0.0.1:PORT/health    # -> {"status":"ok"}
-```
-
-The web app (`apps/web`) is a themed mobile-first shell with a single placeholder route —
-real feature screens, and Docker + Tailscale orchestration in the CLI, are deferred to later
-changes.
+The web app (`apps/web`) is a themed mobile-first shell with a single placeholder route — real
+feature screens land in later changes.
 
 ## Documentation
 
+- [`docs/user/running-switchboard.md`](docs/user/running-switchboard.md) — running locally and the
+  Docker run on the tailnet (volumes, mounted secrets, Tailscale prerequisites, access model).
 - [`docs/dev/Contributing/testing.md`](docs/dev/Contributing/testing.md) — the
   Vitest / Playwright / Storybook harness conventions.
 - [`docs/dev/Architecture`](docs/dev/Architecture) — the LikeC4 architecture model
