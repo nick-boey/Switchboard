@@ -13,3 +13,12 @@ export {
   requestLaunch,
   requestStop,
 } from './session-queries';
+export {
+  noLaunchTracking,
+  trackLaunch,
+  untrackLaunch,
+  settleLaunch,
+  launchOpFor,
+  trackedLaunchIds,
+  type LaunchTracking,
+} from './session-launch-tracking';

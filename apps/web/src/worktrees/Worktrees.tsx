@@ -1,9 +1,10 @@
 import { Box, Group, Stack, Text } from '@mantine/core';
 import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   OperationStatus,
   PlugSessionStatus,
+  SessionLaunchState,
   SessionLaunchStatus,
   WorktreeListResponse,
   WorktreeSummary,
@@ -15,9 +16,16 @@ import {
   dispatchPlugToggle,
   fetchLaunchStatus,
   fetchLiveSessions,
+  launchOpFor,
+  noLaunchTracking,
   requestLaunch,
   requestStop,
   sessionLivenessQueryKey,
+  settleLaunch,
+  trackLaunch,
+  trackedLaunchIds,
+  untrackLaunch,
+  type LaunchTracking,
 } from '../sessions';
 import { Button } from '../ui/controls';
 import { StatusLight } from '../ui/lamp';
@@ -173,65 +181,107 @@ export function Worktrees({
     void queryClient.invalidateQueries({ queryKey: sessionLivenessQueryKey(repoId) });
   };
 
-  // The worktree whose launch operation is being tracked. The launch POST resolves at `starting`
-  // (the ledger has a running worker, but tmux hasn't settled), so the plug can't rely on the
-  // mutation's HTTP-pending state alone — we poll this op until terminal (mirroring the create-status
-  // poll), keeping the plug in `starting` for a slow launch and surfacing an async failure as `error`.
-  const [launchingWtId, setLaunchingWtId] = useState<string | null>(null);
+  // Launch ops are tracked PER worktree (impl review): every plug is independently actionable, so a
+  // user can start launch A then launch B before A settles. A single tracked op would only hold the
+  // last action — the earlier launch would lose its `starting`/`error` status and fall back to tmux
+  // liveness, hiding an async failure as `off`. `tracking` holds the `<wt-id>`s whose launch op
+  // governs their plug; `pendingWtIds`/`failedWtIds` hold the worktrees with a mid-flight / failed
+  // launch-or-stop POST (per worktree, not a single last-action mutation).
+  const [tracking, setTracking] = useState<LaunchTracking>(noLaunchTracking);
+  const [pendingWtIds, setPendingWtIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [failedWtIds, setFailedWtIds] = useState<ReadonlySet<string>>(() => new Set());
+
+  const withId = (s: ReadonlySet<string>, wtId: string): Set<string> => new Set(s).add(wtId);
+  const withoutId = (s: ReadonlySet<string>, wtId: string): Set<string> => {
+    const next = new Set(s);
+    next.delete(wtId);
+    return next;
+  };
+  // Reset a row's launch-status poll so a relaunch re-enters `starting` instead of sticking on the
+  // cached terminal op (a stale `error`/`ready`); the per-id query then re-polls from scratch.
+  const resetLaunchStatus = (wtId: string): void => {
+    void queryClient.resetQueries({ queryKey: ['session-launch-status', repoId, wtId] });
+  };
 
   const launchMut = useMutation({
     mutationFn: (wtId: string) => requestLaunch(client, repoId, wtId),
-    onSuccess: (_status, wtId) => setLaunchingWtId(wtId), // begin polling this launch op
+    onMutate: (wtId) => {
+      setPendingWtIds((s) => withId(s, wtId)); // optimistic transient before the op is tracked
+      setFailedWtIds((s) => withoutId(s, wtId));
+      resetLaunchStatus(wtId);
+    },
+    onSuccess: (_status, wtId) => {
+      setPendingWtIds((s) => withoutId(s, wtId));
+      setTracking((t) => trackLaunch(t, wtId)); // begin polling this launch op
+    },
+    onError: (_err, wtId) => {
+      setPendingWtIds((s) => withoutId(s, wtId));
+      setFailedWtIds((s) => withId(s, wtId));
+    },
     onSettled: invalidateLiveness,
   });
   const stopMut = useMutation({
     mutationFn: (wtId: string) => requestStop(client, repoId, wtId),
-    onMutate: () => setLaunchingWtId(null), // a stop supersedes any tracked launch op
+    onMutate: (wtId) => {
+      setPendingWtIds((s) => withId(s, wtId));
+      setFailedWtIds((s) => withoutId(s, wtId));
+      setTracking((t) => untrackLaunch(t, wtId)); // a stop supersedes this row's tracked launch op
+      resetLaunchStatus(wtId);
+    },
+    onSuccess: (_v, wtId) => setPendingWtIds((s) => withoutId(s, wtId)),
+    onError: (_err, wtId) => {
+      setPendingWtIds((s) => withoutId(s, wtId));
+      setFailedWtIds((s) => withId(s, wtId));
+    },
     onSettled: invalidateLiveness,
   });
 
-  // Poll the tracked launch operation to a terminal state (then stop). Mirrors the create-status
-  // poll's `refetchInterval` that returns `false` once the op settles.
-  const launchStatusQuery = useQuery({
-    queryKey: ['session-launch-status', repoId, launchingWtId],
-    enabled: launchingWtId !== null,
-    queryFn: (): Promise<SessionLaunchStatus | null> =>
-      fetchLaunchStatus(client, repoId, launchingWtId!),
-    refetchInterval: (q) =>
-      q.state.data && isTerminalLaunchState(q.state.data.status) ? false : 700,
+  // Poll EACH tracked launch op independently to a terminal state (then stop). Mirrors the
+  // create-status poll's `refetchInterval` that returns `false` once an op settles — one poll per id
+  // so concurrent launches never overwrite one another's status.
+  const trackedIds = trackedLaunchIds(tracking);
+  const launchStatusQueries = useQueries({
+    queries: trackedIds.map((wtId) => ({
+      queryKey: ['session-launch-status', repoId, wtId],
+      queryFn: (): Promise<SessionLaunchStatus | null> => fetchLaunchStatus(client, repoId, wtId),
+      refetchInterval: (q: { state: { data?: SessionLaunchStatus | null } }) =>
+        q.state.data && isTerminalLaunchState(q.state.data.status) ? false : 700,
+    })),
   });
+  const launchOpByWtId = new Map<string, SessionLaunchState | undefined>();
+  trackedIds.forEach((wtId, i) => launchOpByWtId.set(wtId, launchStatusQueries[i]?.data?.status));
 
-  // When the tracked launch settles, refresh liveness: a `ready` op flips the plug to `on` from the
-  // next tmux read; an `error` op keeps the tracked op so the plug stays `error` until the user acts.
-  const launchOpStatus = launchStatusQuery.data?.status;
+  // When a tracked launch settles, refresh liveness (a `ready` op flips the plug to `on` from the
+  // next tmux read) and reconcile tracking: drop `ready`/`aborted` (defer to liveness), RETAIN
+  // `error` so the row stays `error` until the user stops or relaunches it. The snapshot key reruns
+  // this only when a tracked op's status changes.
+  const launchOpSnapshot = trackedIds
+    .map((id) => `${id}=${launchOpByWtId.get(id) ?? ''}`)
+    .join('|');
   useEffect(() => {
-    if (launchOpStatus && isTerminalLaunchState(launchOpStatus)) {
-      void queryClient.invalidateQueries({ queryKey: sessionLivenessQueryKey(repoId) });
-      if (launchOpStatus === 'ready') setLaunchingWtId(null);
-    }
-  }, [launchOpStatus, queryClient, repoId]);
-
-  // The worktree whose session POST is mid-flight (optimistic transient) or whose last POST failed.
-  const pendingWt = launchMut.isPending
-    ? launchMut.variables
-    : stopMut.isPending
-      ? stopMut.variables
-      : undefined;
-  const failedWt = launchMut.isError
-    ? launchMut.variables
-    : stopMut.isError
-      ? stopMut.variables
-      : undefined;
+    const terminal = trackedIds.filter((id) => {
+      const s = launchOpByWtId.get(id);
+      return s !== undefined && isTerminalLaunchState(s);
+    });
+    if (terminal.length === 0) return;
+    void queryClient.invalidateQueries({ queryKey: sessionLivenessQueryKey(repoId) });
+    setTracking((t) => {
+      let next = t;
+      for (const id of terminal) next = settleLaunch(next, id, launchOpByWtId.get(id)!);
+      return next;
+    });
+    // `launchOpSnapshot` captures every tracked op's status (deps lint is not enabled in this repo).
+  }, [launchOpSnapshot, queryClient, repoId]);
 
   const worktrees = listQuery.isError ? undefined : listQuery.data?.worktrees;
   const sessionStatusByWtId: Record<string, PlugSessionStatus> = {};
   for (const wt of worktrees ?? []) {
     sessionStatusByWtId[wt.wtId] = deriveSessionStatus({
       live: liveSet.has(wt.wtId),
-      pending: pendingWt === wt.wtId,
-      failed: failedWt === wt.wtId,
-      // The polled launch op only governs the worktree it is tracking.
-      launchOp: launchingWtId === wt.wtId ? launchOpStatus : undefined,
+      pending: pendingWtIds.has(wt.wtId),
+      failed: failedWtIds.has(wt.wtId),
+      // Each plug's launch op comes from THAT worktree's tracked poll (or none if untracked).
+      launchOp: launchOpFor(tracking, launchOpByWtId, wt.wtId),
     });
   }
 
