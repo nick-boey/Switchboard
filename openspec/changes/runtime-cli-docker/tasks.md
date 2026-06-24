@@ -158,3 +158,12 @@
       `claude` login + `~/.claude`
       volume, restart-without-re-auth); confirm prettier-clean and that `openspec validate
       runtime-cli-docker --strict` passes.
+      - **Automated gate: GREEN.** `just test` 417 passed / 0 failed; `eslint .` clean;
+        `prettier --check .` clean; `tsc -b` clean; `pnpm -r build` ok; `just e2e` 25 passed / 0
+        unexpected; `likec4 validate --no-layout` valid (4 files); `openspec validate
+        runtime-cli-docker --strict` valid.
+      - **Manual runtime check: NOT EXECUTED** — real Docker + Tailscale bring-up (and the
+        in-container `claude` login / restart-without-re-auth) cannot run in CI/this environment;
+        the orchestration wiring is proven against the injected `RuntimeRunner` fake (argv/order,
+        pinned `serve` invocation, the >= v1.50.0 gate, signal forwarding). A human must run the
+        Docker bring-up per the runtime guide before archive. This box stays unchecked until then.
