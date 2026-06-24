@@ -5,7 +5,10 @@
 The server SHALL start from a `RuntimeContext` and a listen specification that MAY include a direct
 loopback-TCP ingress, a dedicated loopback-TCP serve ingress (on its own port), or both; it SHALL
 expose the health endpoint on every configured ingress and shut down gracefully via the returned
-handle, releasing every listener. Both ingresses SHALL bind loopback only. The dedicated serve ingress
+handle, releasing every listener. Both ingresses SHALL bind loopback only. When binding multiple
+ingresses, a bind failure on any listener SHALL close every listener already opened in that
+`start(ctx)` call before the error propagates — a partial bind SHALL NOT leak an un-closable
+listener (which would otherwise wedge the supervisor's restart loop). The dedicated serve ingress
 SHALL be a separate listener whose identity-trust eligibility is fixed at bind time (per the auth
 gate) and which is intended to be reached only via `tailscale serve` and not published to the host. The
 serve ingress SHALL be identity-eligible only when the runtime asserts it is not host-published (the
@@ -33,6 +36,12 @@ container runtime); otherwise it SHALL be bound bearer-only.
 - **WHEN** `close()` is called on the returned handle
 - **THEN** the server stops accepting connections on every ingress and releases every listener's port
 
+#### Scenario: A partial multi-ingress bind leaks no listener
+
+- **WHEN** the server has bound one ingress and a later ingress fails to bind (e.g. its port is in use)
+- **THEN** the already-opened listener is closed (its port released) before `start(ctx)` rejects, so
+  no listener is leaked and a supervised retry can rebind cleanly
+
 ### Requirement: Configuration loading and validation
 
 The system SHALL provide a `loadConfig()` step that reads `~/.switchboard/config.json` and validates
@@ -48,7 +57,10 @@ with** a serve ingress SHALL be rejected as invalid UNLESS the runtime asserts t
 not published to the host (the container/`--docker` runtime); config/bootstrap validation SHALL fail
 fast with a clear, field-named error outside that runtime, because it would otherwise bind a
 host-reachable, identity-eligible port that any local process could reach with forged markers. A serve
-ingress **without** serve-identity trust is permitted for local host use and is bearer-only.
+ingress **without** serve-identity trust is permitted for local host use and is bearer-only. A listen
+specification that pins the direct and serve ingresses to the **same fixed (non-ephemeral) port**
+SHALL be rejected as invalid (the two listeners could never both bind); two ephemeral ports (`0`) are
+permitted because the OS assigns each a distinct port.
 
 #### Scenario: First run creates secure defaults
 
@@ -68,6 +80,13 @@ ingress **without** serve-identity trust is permitted for local host use and is 
   specification)
 - **THEN** it throws a clear error naming the offending field and startup does not proceed (the server
   does not begin listening)
+
+#### Scenario: Duplicate fixed listen ports are rejected
+
+- **WHEN** the listen specification pins the direct ingress and the serve ingress to the same fixed
+  (non-ephemeral) port
+- **THEN** validation fails fast with a clear, field-named error (`listen.serve.port`) and startup does
+  not proceed — the impossible dual bind is never attempted
 
 #### Scenario: Parsed config is exposed on the context
 

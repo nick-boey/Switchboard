@@ -4,8 +4,10 @@
 
 The container image SHALL run `tailscaled` in **userspace-networking** mode so it needs neither
 `NET_ADMIN` nor `/dev/net/tun`, and SHALL authenticate to the tailnet using a **mounted auth-key
-secret** — never an auth key baked into the image. Kernel TUN (`NET_ADMIN` + `/dev/net/tun`) MAY be
-used as a documented fallback if userspace networking proves unreliable.
+secret** read by **file reference** (`tailscale up --auth-key=file:<path>`) so the key value stays
+file-resident and never appears in process arguments, logs, or image layers — never an auth key
+baked into the image. Kernel TUN (`NET_ADMIN` + `/dev/net/tun`) MAY be used as a documented fallback
+if userspace networking proves unreliable.
 
 #### Scenario: Tailscale comes up in userspace mode
 
@@ -16,7 +18,8 @@ used as a documented fallback if userspace networking proves unreliable.
 #### Scenario: Authentication uses a mounted secret
 
 - **WHEN** `tailscale up` runs
-- **THEN** it uses the auth key from a mounted secret/env, and no auth key is present in the image
+- **THEN** it reads the auth key from the mounted secret BY FILE REFERENCE (`--auth-key=file:<path>`),
+  the raw key never appears in process arguments or logs, and no auth key is present in the image
   layers
 
 ### Requirement: `tailscale serve` is the exclusive ingress to the serve port
@@ -85,4 +88,5 @@ Keychain, not `~/.claude/.credentials.json`) — or alternatively by running on 
 
 - **WHEN** the runtime needs the GitHub PAT or the Tailscale auth key
 - **THEN** they are read from mounted secrets, are absent from the image layers, and are never written
-  to logs or telemetry
+  to logs, telemetry, or process arguments (the Tailscale auth key is passed to `tailscale up` by
+  file reference, not inlined)

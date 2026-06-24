@@ -57,23 +57,28 @@ after which the CLI exits non-zero so the fault is surfaced rather than crash-lo
 ### Requirement: `--docker` mode brings up and supervises the container runtime
 
 The CLI SHALL, in `--docker` mode (as the container entrypoint), bring up the container runtime in
-order — start `tailscaled` (userspace networking), `tailscale up` from the mounted auth-key secret,
-start the server on the dedicated serve ingress, then expose it with the **pinned** `tailscale serve`
+order — start `tailscaled` (userspace networking), `tailscale up` reading the mounted auth-key secret
+BY FILE REFERENCE (`--auth-key=file:<path>`, so the key value never enters argv or logs), start the
+server on the dedicated serve ingress, then expose it with the **pinned** `tailscale serve`
 invocation `tailscale serve --bg --https=443 http://127.0.0.1:<servePort>` after asserting the
-installed Tailscale is at least **v1.50.0** — and SHALL supervise both `tailscaled` and the server for
-the container's lifetime, forwarding shutdown signals to `tailscaled`. The bring-up steps and their
-argv SHALL go through an injectable runner so the wiring is testable without a real Tailscale daemon
-or Docker. Because `--docker` mode publishes **no** API port to the host (per `container-runtime`), it
-is the runtime that asserts the serve ingress is not host-reachable; it is therefore the ONLY mode in
-which the serve ingress is identity-eligible (per the auth gate) and in which `trustServeIdentity` may
-be paired with a serve ingress.
+installed Tailscale is at least **v1.50.0** — and SHALL supervise both `tailscaled` and the server
+CONCURRENTLY for the container's lifetime, forwarding shutdown signals to `tailscaled`. A non-zero
+`tailscale serve` exit SHALL fail the bring-up (the runtime is not healthy without its only external
+HTTPS ingress), and an unexpected `tailscaled` exit SHALL close the server and exit non-zero (never
+report a healthy runtime behind a dead Tailscale ingress). The bring-up steps and their argv SHALL go
+through an injectable runner so the wiring is testable without a real Tailscale daemon or Docker.
+Because `--docker` mode publishes **no** API port to the host (per `container-runtime`), it is the
+runtime that asserts the serve ingress is not host-reachable; it is therefore the ONLY mode in which
+the serve ingress is identity-eligible (per the auth gate) and in which `trustServeIdentity` may be
+paired with a serve ingress.
 
 #### Scenario: Docker-mode bring-up runs in order
 
 - **WHEN** the CLI is started in `--docker` mode
-- **THEN** it invokes, in order, `tailscaled` (userspace), `tailscale up` with the mounted auth key,
-  `start(ctx)` on the dedicated serve ingress, and `tailscale serve --bg --https=443
-  http://127.0.0.1:<servePort>` pointed at that port
+- **THEN** it invokes, in order, `tailscaled` (userspace), `tailscale up` reading the mounted auth key
+  by file reference (`--auth-key=file:<path>`, never the raw key in argv), `start(ctx)` on the
+  dedicated serve ingress, and `tailscale serve --bg --https=443 http://127.0.0.1:<servePort>`
+  pointed at that port
 
 #### Scenario: The pinned serve invocation and minimum version are asserted
 
@@ -86,6 +91,18 @@ be paired with a serve ingress.
 
 - **WHEN** the container receives a shutdown signal in `--docker` mode
 - **THEN** the CLI gracefully closes the server and forwards the signal to `tailscaled`
+
+#### Scenario: A failed `tailscale serve` fails the bring-up
+
+- **WHEN** `tailscale serve` exits non-zero after the server has started
+- **THEN** the CLI closes the server and the bring-up exits non-zero — it does NOT report a healthy
+  runtime, because the only external HTTPS ingress was never configured
+
+#### Scenario: An unexpected tailscaled exit is not reported as healthy
+
+- **WHEN** `tailscaled` exits unexpectedly (not via a shutdown signal) while the server is running
+- **THEN** the CLI closes the server and exits non-zero, rather than continuing to report a healthy
+  runtime with no Tailscale ingress
 
 ### Requirement: npm-distributed packaged CLI with a smoke test
 

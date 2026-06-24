@@ -91,4 +91,34 @@ describe('listen specification (runtime-cli-docker Decision 2/4)', () => {
       expect(paths.some((p) => p === 'listen.direct.port')).toBe(true);
     }
   });
+
+  it('rejects direct and serve pinned to the SAME fixed port (impossible dual bind)', () => {
+    const result = configSchema.safeParse({
+      bearerToken: 'x',
+      listen: { direct: { port: 8080 }, serve: { port: 8080 } },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join('.'));
+      expect(paths.some((p) => p === 'listen.serve.port')).toBe(true);
+    }
+  });
+
+  it('allows direct and serve both ephemeral (port 0) — distinct ports are assigned at bind', () => {
+    const parsed = configSchema.parse({
+      bearerToken: 'x',
+      listen: { direct: { port: 0 }, serve: { port: 0 } },
+    });
+    expect(parsed.listen.direct).toEqual({ port: 0 });
+    expect(parsed.listen.serve).toEqual({ port: 0 });
+  });
+
+  it('allows distinct fixed direct and serve ports', () => {
+    const parsed = configSchema.parse({
+      bearerToken: 'x',
+      listen: { direct: { port: 3000 }, serve: { port: 4180 } },
+    });
+    expect(parsed.listen.direct).toEqual({ port: 3000 });
+    expect(parsed.listen.serve).toEqual({ port: 4180 });
+  });
 });

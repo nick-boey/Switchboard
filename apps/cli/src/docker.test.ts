@@ -8,7 +8,8 @@ import { fakeServerStarter, type FakeServerStarter } from './testing/server-star
 const silentLogger: RuntimeLogger = { debug() {}, info() {}, warn() {}, error() {} };
 
 const SERVE_PORT = 4180;
-const AUTH_KEY = 'tskey-auth-secret';
+/** Path to the MOUNTED auth-key secret file — the bring-up references it, never the raw key value. */
+const AUTH_KEY_FILE = '/var/run/secrets/tailscale-authkey';
 
 /** Yield to the event loop until `predicate` holds (or a bounded number of turns elapse). */
 async function waitFor(predicate: () => boolean, turns = 200): Promise<void> {
@@ -74,7 +75,7 @@ describe('runDockerBringUp', () => {
       shutdownSignal: ac.signal,
       logger: silentLogger,
       servePort: SERVE_PORT,
-      authKey: AUTH_KEY,
+      authKeyFile: AUTH_KEY_FILE,
       hostname: 'switchboard',
       sleep: async () => {},
     });
@@ -99,9 +100,10 @@ describe('runDockerBringUp', () => {
       '--tun=userspace-networking',
     );
 
-    // tailscale up uses the mounted auth key.
+    // tailscale up references the MOUNTED auth-key secret FILE via the `file:` form (so the key
+    // stays file-resident and never lands in process argv) — never the raw key value.
     const up = base.calls.find((c) => c.command === 'tailscale' && c.args[0] === 'up');
-    expect(up?.args).toContain(`--auth-key=${AUTH_KEY}`);
+    expect(up?.args).toContain(`--auth-key=file:${AUTH_KEY_FILE}`);
 
     // The PINNED serve invocation — exactly, not a fallback chain.
     const serve = base.calls.find((c) => c.command === 'tailscale' && c.args[0] === 'serve');
@@ -127,7 +129,7 @@ describe('runDockerBringUp', () => {
       shutdownSignal: ac.signal,
       logger: silentLogger,
       servePort: SERVE_PORT,
-      authKey: AUTH_KEY,
+      authKeyFile: AUTH_KEY_FILE,
       sleep: async () => {},
     });
 
@@ -135,5 +137,98 @@ describe('runDockerBringUp', () => {
     expect(events.some((e) => e.startsWith('run tailscale serve'))).toBe(false);
     expect(base.spawned).toHaveLength(0); // refused before bringing anything up
     expect(fakeStart.startCalls).toBe(0); // the server was never started
+  });
+
+  it('never puts the raw auth key in argv: tailscale up references the secret FILE by path (no-leak)', async () => {
+    const base = fakeRuntimeRunner({ version: '1.52.0' });
+    const fakeStart = fakeServerStarter();
+    const { runner, start, events } = instrument(base, fakeStart);
+    const ac = new AbortController();
+
+    const exit = runDockerBringUp({
+      runner,
+      start,
+      shutdownSignal: ac.signal,
+      logger: silentLogger,
+      servePort: SERVE_PORT,
+      authKeyFile: AUTH_KEY_FILE,
+      sleep: async () => {},
+    });
+
+    await waitFor(() => events.some((e) => e.startsWith('run tailscale up')));
+
+    const up = base.calls.find((c) => c.command === 'tailscale' && c.args[0] === 'up');
+    // The auth key is supplied by reference to the mounted secret file (the `file:` form)...
+    expect(up?.args).toContain(`--auth-key=file:${AUTH_KEY_FILE}`);
+    // ...and NO `--auth-key=` argv ANYWHERE inlines a key value — every one uses the `file:` prefix.
+    for (const call of base.calls) {
+      for (const arg of call.args) {
+        if (arg.startsWith('--auth-key=')) {
+          expect(arg.startsWith('--auth-key=file:')).toBe(true);
+        }
+      }
+    }
+
+    ac.abort();
+    base.spawned[0]?.exit(0);
+    await exit;
+  });
+
+  it('FAILS FAST (no healthy runtime) when `tailscale serve` fails after the server starts', async () => {
+    const base = fakeRuntimeRunner({ version: '1.52.0' });
+    // serve exits non-zero — the only external HTTPS ingress was never configured.
+    base.stubRun((c) => c.command === 'tailscale' && c.args[0] === 'serve', {
+      code: 1,
+      stdout: '',
+    });
+    const fakeStart = fakeServerStarter();
+    const { runner, start, events } = instrument(base, fakeStart);
+    const ac = new AbortController();
+
+    const exit = runDockerBringUp({
+      runner,
+      start,
+      shutdownSignal: ac.signal,
+      logger: silentLogger,
+      servePort: SERVE_PORT,
+      authKeyFile: AUTH_KEY_FILE,
+      sleep: async () => {},
+    });
+
+    // Once serve has been attempted, the bring-up must NOT park on a healthy server: it tears the
+    // server down and the process exits non-zero (here, the promise rejects).
+    await waitFor(() => events.some((e) => e.startsWith('run tailscale serve')));
+    base.spawned[0]?.exit(0); // allow tailscaled to be reaped during teardown
+    await expect(exit).rejects.toThrow();
+    expect(fakeStart.handles[0].closeCalls).toBe(1); // server was closed, not left running
+  });
+
+  it('does not park healthy when tailscaled exits unexpectedly: closes the server and exits non-zero', async () => {
+    const base = fakeRuntimeRunner({ version: '1.52.0' });
+    const fakeStart = fakeServerStarter(); // server stays up (healthy)
+    const { runner, start, events } = instrument(base, fakeStart);
+    const ac = new AbortController();
+
+    const exit = runDockerBringUp({
+      runner,
+      start,
+      shutdownSignal: ac.signal,
+      logger: silentLogger,
+      servePort: SERVE_PORT,
+      authKeyFile: AUTH_KEY_FILE,
+      sleep: async () => {},
+    });
+
+    // The runtime is fully up (serve configured) and healthy...
+    await waitFor(() =>
+      events.includes(`run tailscale serve --bg --https=443 http://127.0.0.1:${SERVE_PORT}`),
+    );
+    // ...then tailscaled dies on its own (NOT via a shutdown signal) — there is now no Tailscale
+    // ingress, so the supervisor must not keep reporting healthy.
+    base.spawned[0].exit(1);
+
+    const code = await exit;
+    expect(code).not.toBe(0); // not parked-healthy with a dead tailscaled
+    expect(fakeStart.handles[0].closeCalls).toBe(1); // the server was closed
   });
 });

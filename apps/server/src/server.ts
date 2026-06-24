@@ -13,8 +13,11 @@ async function listenLoopback(
   app: { fetch: (req: Request) => Response | Promise<Response> },
   port: number,
 ): Promise<{ server: ServerType; url: string }> {
-  const server = await new Promise<ServerType>((resolve) => {
+  const server = await new Promise<ServerType>((resolve, reject) => {
     const s = serve({ fetch: app.fetch, hostname: LOOPBACK_HOST, port }, () => resolve(s));
+    // A bind failure (e.g. EADDRINUSE) emits `error` instead of the listening callback — reject so
+    // the caller can clean up any already-opened listeners rather than hanging on a half-bind.
+    s.on('error', reject);
   });
   const { port: boundPort } = server.address() as AddressInfo;
   return { server, url: `http://${LOOPBACK_HOST}:${boundPort}` };
@@ -64,22 +67,33 @@ export async function start(
   const listeners: ServerType[] = [];
   const urls: ServerHandleUrls = {};
 
-  // Direct/local loopback-TCP ingress — always bearer-only (a forged identity header grants
-  // nothing here, Decision 3).
-  if (direct) {
-    const { server, url } = await listenLoopback(buildApp(DIRECT_INGRESS_TRUST), direct.port);
-    listeners.push(server);
-    urls.direct = url;
-  }
-  // Dedicated serve ingress — identity-eligible ONLY when the runtime asserts no host publication
-  // (computed at bind time via `serveIngressTrust`).
-  if (serveIngress) {
-    const { server, url } = await listenLoopback(
-      buildApp(serveIngressTrust(ctx)),
-      serveIngress.port,
+  // Bind every configured ingress, but never leak a partially-bound set: if a later listener fails
+  // to bind (e.g. EADDRINUSE), close the ones already opened before rethrowing so the supervisor's
+  // retry starts from a clean slate rather than a stuck, half-bound state.
+  try {
+    // Direct/local loopback-TCP ingress — always bearer-only (a forged identity header grants
+    // nothing here, Decision 3).
+    if (direct) {
+      const { server, url } = await listenLoopback(buildApp(DIRECT_INGRESS_TRUST), direct.port);
+      listeners.push(server);
+      urls.direct = url;
+    }
+    // Dedicated serve ingress — identity-eligible ONLY when the runtime asserts no host publication
+    // (computed at bind time via `serveIngressTrust`).
+    if (serveIngress) {
+      const { server, url } = await listenLoopback(
+        buildApp(serveIngressTrust(ctx)),
+        serveIngress.port,
+      );
+      listeners.push(server);
+      urls.serve = url;
+    }
+  } catch (err) {
+    await Promise.allSettled(
+      listeners.map((server) => new Promise<void>((res) => server.close(() => res()))),
     );
-    listeners.push(server);
-    urls.serve = url;
+    await telemetry.shutdown();
+    throw err;
   }
 
   // The primary URL is the direct ingress when present, otherwise the serve ingress.

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { chmodSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   AppConfig,
@@ -90,7 +90,8 @@ async function runStart(): Promise<number> {
  * the container-isolation assertion (no host publication — the precondition for serve-identity
  * eligibility), ensures the dedicated serve ingress is configured, and brings up `tailscaled` +
  * `tailscale serve` in front of `start(ctx)` via the real orchestration runner. The auth key is
- * read from a mounted secret (env or `~/.switchboard/secrets/tailscale-authkey`), never baked in.
+ * supplied to `tailscale up` BY FILE REFERENCE (the mounted secret path), so its value never enters
+ * argv or logs — never baked into the image.
  */
 async function runDocker(): Promise<number> {
   const { config, configDir, assertNoHostPublication } = bootstrap({
@@ -118,24 +119,38 @@ async function runDocker(): Promise<number> {
     shutdownSignal: installShutdownSignal(),
     logger,
     servePort,
-    authKey: resolveAuthKey(configDir),
+    authKeyFile: resolveAuthKeyFile(configDir),
     onListening: announceListening,
   });
 }
 
-/** Read the Tailscale auth key from a mounted secret (env first, then the secrets dir). */
-function resolveAuthKey(configDir: string): string {
+/**
+ * Resolve the PATH to the mounted Tailscale auth-key secret. `--docker` passes this to
+ * `tailscale up` via the `--auth-key=file:<path>` form, so the key VALUE never enters argv or logs.
+ * Precedence:
+ *   1. `TS_AUTHKEY_FILE` — an explicit mounted-secret path (the conventional `*_FILE` form);
+ *   2. the default `secrets/tailscale-authkey` under the config dir, when present;
+ *   3. a raw `TS_AUTHKEY` / `TAILSCALE_AUTHKEY` value materialised to that default file at mode
+ *      `600` — so an env-supplied key is still handed to `tailscale up` by file reference, never
+ *      inlined into argv.
+ */
+function resolveAuthKeyFile(configDir: string): string {
+  const explicit = process.env.TS_AUTHKEY_FILE;
+  if (explicit && explicit.trim().length > 0) return explicit.trim();
+
+  const defaultPath = join(configDir, 'secrets', 'tailscale-authkey');
+  if (existsSync(defaultPath)) return defaultPath;
+
   const fromEnv = process.env.TS_AUTHKEY ?? process.env.TAILSCALE_AUTHKEY;
-  if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
-  try {
-    const fromFile = readFileSync(join(configDir, 'secrets', 'tailscale-authkey'), 'utf8').trim();
-    if (fromFile.length > 0) return fromFile;
-  } catch {
-    // fall through to the explicit error below
+  if (fromEnv && fromEnv.trim().length > 0) {
+    writeFileSync(defaultPath, `${fromEnv.trim()}\n`, { mode: 0o600 });
+    chmodSync(defaultPath, 0o600); // enforce 600 even if a permissive umask widened the create mode
+    return defaultPath;
   }
+
   throw new Error(
-    'no Tailscale auth key found: set TS_AUTHKEY (mounted secret) or place it in ' +
-      'secrets/tailscale-authkey under the config dir',
+    'no Tailscale auth key found: set TS_AUTHKEY_FILE to the mounted secret path, place the key in ' +
+      'secrets/tailscale-authkey under the config dir, or set TS_AUTHKEY (a mounted-secret value)',
   );
 }
 

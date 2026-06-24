@@ -1,9 +1,23 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { networkInterfaces } from 'node:os';
+import type { AddressInfo } from 'node:net';
+import { serve, type ServerType } from '@hono/node-server';
 import { configSchema } from '@switchboard/shared';
 import { makeTestContext } from '@switchboard/shared/testing';
-import type { ServerHandle } from '@switchboard/shared';
+import type { AppConfig, ServerHandle } from '@switchboard/shared';
 import { start } from './server';
+
+/** Bind an ephemeral loopback listener, read its port, close it, and return the (now-free) port. */
+async function freeLoopbackPort(): Promise<number> {
+  const s = await new Promise<ServerType>((resolve) => {
+    const server = serve({ fetch: () => new Response('x'), hostname: '127.0.0.1', port: 0 }, () =>
+      resolve(server),
+    );
+  });
+  const port = (s.address() as AddressInfo).port;
+  await new Promise<void>((res) => s.close(() => res()));
+  return port;
+}
 
 function firstNonLoopbackIPv4(): string | undefined {
   for (const addrs of Object.values(networkInterfaces())) {
@@ -122,12 +136,36 @@ describe('start(ctx) dedicated serve ingress (runtime-cli-docker Decision 2)', (
   it('close() releases EVERY listener (both ingresses)', async () => {
     const h = await start(dualIngressContext());
     const direct = h.urls.direct!;
-    const serve = h.urls.serve!;
+    const serveUrl = h.urls.serve!;
     await h.close();
     handle = undefined;
 
-    for (const url of [direct, serve]) {
+    for (const url of [direct, serveUrl]) {
       await expect(fetch(`${url}/health`, { signal: AbortSignal.timeout(500) })).rejects.toThrow();
     }
+  });
+});
+
+describe('start(ctx) partial dual-listener bind cleanup (impl review)', () => {
+  it('closes the already-opened first listener when a later ingress fails to bind (no leak)', async () => {
+    const port = await freeLoopbackPort();
+    // A hand-built config (bypassing schema validation, which now rejects duplicate fixed ports)
+    // that pins BOTH ingresses to the SAME fixed port: the direct listener binds, then the serve
+    // listener hits EADDRINUSE — forcing the second-bind failure path.
+    const base = configSchema.parse({ bearerToken: 'test-bearer-token' });
+    const config: AppConfig = { ...base, listen: { direct: { port }, serve: { port } } };
+    const ctx = makeTestContext({ config });
+
+    await expect(start(ctx)).rejects.toThrow();
+
+    // The first (direct) listener must have been closed on the failed bind — its port is free
+    // again. Had it leaked, this rebind would itself fail with EADDRINUSE.
+    const rebound = await new Promise<ServerType>((resolve, reject) => {
+      const s = serve({ fetch: () => new Response('y'), hostname: '127.0.0.1', port }, () =>
+        resolve(s),
+      );
+      s.on('error', reject);
+    });
+    await new Promise<void>((res) => rebound.close(() => res()));
   });
 });

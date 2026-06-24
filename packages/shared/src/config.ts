@@ -70,6 +70,22 @@ export const listenConfigSchema = z
     direct: directIngressSchema.optional(),
     serve: serveIngressSchema.optional(),
   })
+  .superRefine((listen, ctx) => {
+    // A direct ingress and a serve ingress pinned to the SAME fixed (non-ephemeral) port can never
+    // both bind — the second listener always hits EADDRINUSE, leaking the first. Reject the
+    // impossible spec at validation rather than half-binding at runtime. Port 0 is ephemeral (the
+    // OS assigns each listener a distinct port), so two ephemeral ingresses are fine.
+    const direct = listen.direct?.port;
+    const serve = listen.serve?.port;
+    if (direct !== undefined && serve !== undefined && direct !== 0 && direct === serve) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['serve', 'port'],
+        message:
+          'serve port must differ from the direct port — the same fixed port cannot bind two listeners',
+      });
+    }
+  })
   .default({ direct: { port: 0 } });
 export type ListenConfig = z.infer<typeof listenConfigSchema>;
 
