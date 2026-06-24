@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SwitchboardClient } from '../api/client';
-import { fetchLiveSessions, requestLaunch, requestStop } from './session-queries';
+import {
+  fetchLaunchStatus,
+  fetchLiveSessions,
+  requestLaunch,
+  requestStop,
+} from './session-queries';
 
 /**
  * Session query/mutation builder tests (task 9.1). They talk to the API through the typed client
@@ -11,9 +16,16 @@ function fakeClient(overrides: {
   list?: () => Promise<unknown>;
   launch?: (body: unknown) => Promise<unknown>;
   stop?: (body: unknown) => Promise<unknown>;
-}): { client: SwitchboardClient; launchArg: () => unknown; stopArg: () => unknown } {
+  status?: () => Promise<unknown>;
+}): {
+  client: SwitchboardClient;
+  launchArg: () => unknown;
+  stopArg: () => unknown;
+  statusArg: () => unknown;
+} {
   let launchArg: unknown;
   let stopArg: unknown;
+  let statusArg: unknown;
   const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
   const client = {
     sessions: {
@@ -22,7 +34,7 @@ function fakeClient(overrides: {
           launchArg = arg.json;
           return overrides.launch
             ? overrides.launch(arg.json)
-            : ok({ repoId: 'session/acme/infra/x', operationId: 'op-1', status: 'cloning' });
+            : ok({ repoId: 'session/acme/infra/x', operationId: 'op-1', status: 'starting' });
         },
       },
       stop: {
@@ -43,11 +55,30 @@ function fakeClient(overrides: {
                     { repoId: 'acme/infra', wtId: 'b--abcdef012345', status: 'on' },
                   ],
                 }),
+          ':wtId': {
+            status: {
+              $get: async (arg: { param: unknown }) => {
+                statusArg = arg.param;
+                return overrides.status
+                  ? overrides.status()
+                  : ok({
+                      repoId: 'session/acme/infra/x--0123456789ab',
+                      operationId: 'op-1',
+                      status: 'ready',
+                    });
+              },
+            },
+          },
         },
       },
     },
   } as unknown as SwitchboardClient;
-  return { client, launchArg: () => launchArg, stopArg: () => stopArg };
+  return {
+    client,
+    launchArg: () => launchArg,
+    stopArg: () => stopArg,
+    statusArg: () => statusArg,
+  };
 }
 
 describe('fetchLiveSessions', () => {
@@ -64,11 +95,11 @@ describe('fetchLiveSessions', () => {
 });
 
 describe('requestLaunch / requestStop', () => {
-  it('launch posts { repoId, wtId } and returns the operation status', async () => {
+  it('launch posts { repoId, wtId } and returns the SESSION launch status (starting)', async () => {
     const fake = fakeClient({});
     const status = await requestLaunch(fake.client, 'acme/infra', 'x--0123456789ab');
     expect(fake.launchArg()).toEqual({ repoId: 'acme/infra', wtId: 'x--0123456789ab' });
-    expect(status).toMatchObject({ status: 'cloning' });
+    expect(status).toMatchObject({ status: 'starting' });
   });
 
   it('stop posts { repoId, wtId } and resolves on success', async () => {
@@ -89,5 +120,26 @@ describe('requestLaunch / requestStop', () => {
     });
     await expect(requestLaunch(fake.client, 'acme/infra', 'x--0123456789ab')).rejects.toThrow();
     expect(spy).toHaveBeenCalled();
+  });
+});
+
+describe('fetchLaunchStatus', () => {
+  it('gets the launch-status route for (owner, repo, wtId) and returns the session launch status', async () => {
+    const fake = fakeClient({});
+    const status = await fetchLaunchStatus(fake.client, 'acme/infra', 'x--0123456789ab');
+    expect(fake.statusArg()).toEqual({ owner: 'acme', repo: 'infra', wtId: 'x--0123456789ab' });
+    expect(status).toMatchObject({ status: 'ready' });
+  });
+
+  it('returns null when the launch op is not yet recorded (404)', async () => {
+    const fake = fakeClient({ status: async () => ({ ok: false, status: 404 }) });
+    await expect(
+      fetchLaunchStatus(fake.client, 'acme/infra', 'x--0123456789ab'),
+    ).resolves.toBeNull();
+  });
+
+  it('throws on a non-404 error response', async () => {
+    const fake = fakeClient({ status: async () => ({ ok: false, status: 500 }) });
+    await expect(fetchLaunchStatus(fake.client, 'acme/infra', 'x--0123456789ab')).rejects.toThrow();
   });
 });

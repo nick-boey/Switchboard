@@ -150,12 +150,15 @@ test.afterAll(async () => {
   }
 });
 
-async function openHubRepo(page: import('@playwright/test').Page): Promise<void> {
+async function openHubRepo(
+  page: import('@playwright/test').Page,
+  server: ServerHandle = uiServer,
+): Promise<void> {
   await page.addInitScript(
     (config) => {
       (window as unknown as { __SWITCHBOARD_CONFIG__?: unknown }).__SWITCHBOARD_CONFIG__ = config;
     },
-    { serverUrl: uiServer.url, bearerToken: TOKEN },
+    { serverUrl: server.url, bearerToken: TOKEN },
   );
   await page.goto('/');
   await expect(page.getByTestId('app-shell')).toBeVisible();
@@ -190,6 +193,58 @@ test('the plug launches then stops a session on the worktrees hub (on/off round-
   // On → activate → stop → the plug reads off again.
   await plug.click();
   await expect(plug).toHaveAttribute('data-status', 'off', { timeout: 15_000 });
+});
+
+test('an asynchronous launch failure surfaces the plug error state (not off)', async ({ page }) => {
+  // Boots a dedicated server and clones in-test (like the seam test below); give it headroom over
+  // the default 30s so a real git clone under full-suite CPU contention does not time out.
+  test.setTimeout(90_000);
+  // The launch POST resolves the moment the ledger records a running worker (status `starting`), so
+  // an async tmux/`claude` failure lands AFTER the POST. The plug must POLL the launch op and read
+  // `error`, never silently fall back to liveness-only `off`. A fake tmux whose `newSession` rejects
+  // (and which never reports a live session) reproduces the failed launch.
+  const root = mkdtempSync(join(tmpdir(), 'sess-ui-fail-'));
+  const failingTmux: TmuxRunner = {
+    async newSession() {
+      throw new Error('claude failed to start');
+    },
+    async hasSession() {
+      return false;
+    },
+    async listSessions() {
+      return [];
+    },
+    async killSession() {},
+  };
+  const server = await bootServer(root, failingTmux);
+  try {
+    await cloneRepo(server);
+    await openHubRepo(page, server);
+    const branch = 'feature/launch-fail';
+    await page.getByTestId('wt-add').click();
+    await expect(page.getByTestId('create-worktree-modal')).toBeVisible();
+    await page.getByTestId('wt-branch-input').fill(branch);
+    await page.getByTestId('wt-create-button').click();
+    const wtId = idForBranch(branch);
+    const plug = page.getByTestId(`wt-plug-${wtId}`);
+    await expect(plug).toBeVisible({ timeout: 20_000 });
+
+    // Off → activate → the launch op fails asynchronously → the plug polls and reads error.
+    await expect(plug).toHaveAttribute('data-status', 'off');
+    await plug.click();
+    await expect(plug).toHaveAttribute('data-status', 'error', { timeout: 15_000 });
+
+    // Still no standalone session screen and no mobile-app handoff toast (Gate #1 + #2).
+    await expect(page.getByTestId('session-handoff')).toHaveCount(0);
+    await expect(page.getByTestId('sessions-list')).toHaveCount(0);
+  } finally {
+    // Close the browser context BEFORE the server. The SPA holds a keep-alive socket open (the
+    // launch-status + liveness polls), and Node's `server.close()` waits for idle connections to
+    // drain. Playwright only tears the context down AFTER the test returns, so closing it here is
+    // what lets `server.close()` resolve — otherwise it deadlocks until the test timeout.
+    await page.context().close();
+    await server.close();
+  }
 });
 
 test('a live session is listed on and blocks a non-force delete; stop clears it (seam end-to-end)', async () => {

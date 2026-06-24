@@ -1,4 +1,4 @@
-import type { OperationStatus } from '@switchboard/shared';
+import type { SessionLaunchStatus } from '@switchboard/shared';
 import type { SwitchboardClient } from '../api/client';
 
 /**
@@ -25,14 +25,37 @@ export async function fetchLiveSessions(
   return new Set(body.sessions.map((s) => s.wtId));
 }
 
-/** Request a launch for a worktree; returns the launch operation status (the transient `starting`). */
+/** Request a launch for a worktree; returns the SESSION launch status (the transient `starting`). */
 export async function requestLaunch(
   client: SwitchboardClient,
   repoId: string,
   wtId: string,
-): Promise<OperationStatus> {
+): Promise<SessionLaunchStatus> {
   const res = await client.sessions.launch.$post({ json: { repoId, wtId } });
   if (!res.ok) throw new Error(`session launch failed: ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Fetch a worktree's launch-operation status (the `starting`/`error` poll target). The launch POST
+ * returns the moment the ledger records a running worker, so the container polls this until the op
+ * settles — keeping the plug in `starting` for a slow launch and surfacing an asynchronous launch
+ * failure as `error`. `null` when no launch op is recorded yet (404).
+ */
+export async function fetchLaunchStatus(
+  client: SwitchboardClient,
+  repoId: string,
+  wtId: string,
+): Promise<SessionLaunchStatus | null> {
+  const [owner, repo] = repoId.split('/');
+  const res = await client.sessions[':owner'][':repo'][':wtId'].status.$get({
+    param: { owner, repo, wtId },
+  });
+  // 404 = no launch op recorded yet (the poll keeps waiting). Capture the code into a local so the
+  // unreachable `!res.ok` branch doesn't narrow `res` to `never` (the typed union is `200 | 404`).
+  const code: number = res.status;
+  if (code === 404) return null;
+  if (!res.ok) throw new Error(`session launch status failed: ${code}`);
   return res.json();
 }
 

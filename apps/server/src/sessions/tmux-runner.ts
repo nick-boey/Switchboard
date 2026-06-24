@@ -27,8 +27,13 @@ export interface TmuxRunner {
   killSession(name: string): Promise<void>;
 }
 
-/** A launch failure carries only a typed marker — never tmux's stderr text (no-leak). */
+/**
+ * A launch failure carries only a typed marker — never tmux's stderr text (no-leak). The `kind`
+ * (`tmux-failure`) is what the operation ledger records on the failed launch record, so the session
+ * orchestrator surfaces a SESSION failure kind rather than the clone `git-failure` default.
+ */
 export class TmuxLaunchError extends Error {
+  readonly kind = 'tmux-failure' as const;
   constructor(readonly code: number | null) {
     super('tmux launch failed');
     this.name = 'TmuxLaunchError';

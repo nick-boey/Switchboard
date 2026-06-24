@@ -32,6 +32,32 @@ describe('deriveSessionStatus', () => {
   });
 });
 
+describe('deriveSessionStatus with a tracked launch op (polled after the POST resolves)', () => {
+  it('stays starting while the tracked launch op is still starting, even though no POST is pending', () => {
+    // The launch POST resolved (pending=false) but the launch is still running (op `starting`): the
+    // plug must remain the guarded transient, not fall back to liveness-only `off`.
+    expect(
+      deriveSessionStatus({ live: false, pending: false, failed: false, launchOp: 'starting' }),
+    ).toBe('starting');
+  });
+
+  it('surfaces error when the tracked launch op resolved to a typed failure (NOT off)', () => {
+    // An asynchronous launch failure after the POST resolved → the plug shows error, not off.
+    expect(
+      deriveSessionStatus({ live: false, pending: false, failed: false, launchOp: 'error' }),
+    ).toBe('error');
+  });
+
+  it('a ready launch op defers to tmux liveness (on when live, off when not)', () => {
+    expect(
+      deriveSessionStatus({ live: true, pending: false, failed: false, launchOp: 'ready' }),
+    ).toBe('on');
+    expect(
+      deriveSessionStatus({ live: false, pending: false, failed: false, launchOp: 'ready' }),
+    ).toBe('off');
+  });
+});
+
 describe('sessionStatusToPlug', () => {
   it('maps each session status to its plug visual', () => {
     expect(sessionStatusToPlug('off')).toBe('off');

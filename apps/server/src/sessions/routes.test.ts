@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { makeTestContext } from '@switchboard/shared/testing';
 import {
   idForBranch,
-  type OperationStatus,
   type RepoTarget,
   type ServerHandle,
+  type SessionLaunchStatus,
   type SessionSummary,
 } from '@switchboard/shared';
 import { start } from '../server.js';
@@ -25,12 +25,12 @@ describe('session routes + typed client', () => {
 
   function makeFake() {
     const calls = { launch: 0, stop: 0, status: 0, list: 0 };
-    let launchResult: OperationStatus = {
+    let launchResult: SessionLaunchStatus = {
       repoId: `session/${REPO}/${WT_ID}`,
       operationId: 'op-1',
-      status: 'cloning',
+      status: 'starting',
     };
-    let statusResult: OperationStatus | null = null;
+    let statusResult: SessionLaunchStatus | null = null;
     let listResult: SessionSummary[] = [{ repoId: REPO, wtId: WT_ID, status: 'on' }];
     const orchestrator: SessionOrchestrator = {
       async launchSession() {
@@ -56,10 +56,10 @@ describe('session routes + typed client', () => {
     return {
       calls,
       orchestrator,
-      set launchResult(v: OperationStatus) {
+      set launchResult(v: SessionLaunchStatus) {
         launchResult = v;
       },
-      set statusResult(v: OperationStatus | null) {
+      set statusResult(v: SessionLaunchStatus | null) {
         statusResult = v;
       },
       set listResult(v: SessionSummary[]) {
@@ -95,7 +95,8 @@ describe('session routes + typed client', () => {
     const client = await boot(fake.orchestrator);
     const res = await client.sessions.launch.$post({ json: { repoId: REPO, wtId: WT_ID } });
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ status: 'cloning' });
+    // The launch returns the SESSION launch status (transient `starting`), never `cloning`.
+    expect(await res.json()).toMatchObject({ status: 'starting' });
     expect(fake.calls.launch).toBe(1);
   });
 
@@ -156,5 +157,18 @@ describe('session routes + typed client', () => {
     });
     expect(found.status).toBe(200);
     expect(await found.json()).toMatchObject({ status: 'ready' });
+
+    // A failed launch reports a typed SESSION error kind, not a clone `git-failure`.
+    fake.statusResult = {
+      repoId: `session/${REPO}/${WT_ID}`,
+      operationId: 'op-1',
+      status: 'error',
+      error: { kind: 'tmux-failure' },
+    };
+    const failed = await client.sessions[':owner'][':repo'][':wtId'].status.$get({
+      param: { owner: 'acme', repo: 'widget-factory', wtId: WT_ID },
+    });
+    expect(failed.status).toBe(200);
+    expect(await failed.json()).toMatchObject({ status: 'error', error: { kind: 'tmux-failure' } });
   });
 });

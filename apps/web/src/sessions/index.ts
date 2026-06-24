@@ -9,6 +9,7 @@ export {
 export {
   sessionLivenessQueryKey,
   fetchLiveSessions,
+  fetchLaunchStatus,
   requestLaunch,
   requestStop,
 } from './session-queries';

@@ -86,6 +86,11 @@ export {
   sessionLaunchRequestSchema,
   sessionStopRequestSchema,
   plugSessionStatusSchema,
+  sessionLaunchStateSchema,
+  sessionLaunchErrorKindSchema,
+  sessionLaunchErrorSchema,
+  sessionLaunchStatusSchema,
+  isTerminalLaunchState,
   sessionSummarySchema,
   sessionListResponseSchema,
 } from './sessions.js';
@@ -93,6 +98,10 @@ export type {
   SessionLaunchRequest,
   SessionStopRequest,
   PlugSessionStatus,
+  SessionLaunchState,
+  SessionLaunchErrorKind,
+  SessionLaunchFailure,
+  SessionLaunchStatus,
   SessionSummary,
   SessionListResponse,
 } from './sessions.js';

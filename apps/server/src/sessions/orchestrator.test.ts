@@ -3,7 +3,7 @@ import { rmSync } from 'node:fs';
 import { tmuxSessionName, type RepoTarget, type WorktreeSummary } from '@switchboard/shared';
 import { makeServerTestContext } from '../testing/operation-scaffolding.js';
 import { fakeTmuxRunner, type FakeTmuxRunner } from '../testing/tmux-runner.js';
-import type { TmuxRunner } from './tmux-runner.js';
+import { TmuxLaunchError, type TmuxRunner } from './tmux-runner.js';
 import { createSessionOrchestrator, type SessionWorktreeView } from './orchestrator.js';
 
 /**
@@ -61,7 +61,9 @@ describe('session orchestrator — launch', () => {
       command: ['claude', '--remote-control'],
     });
     expect(await tmux.hasSession(name)).toBe(true);
-    expect(status.status === 'cloning' || status.status === 'ready').toBe(true);
+    // The launch returns the SESSION launch status, never the clone `OperationStatus` shape: the
+    // in-flight op reports the transient `starting` (not `cloning`), then settles `ready`.
+    expect(status.status).toBe('starting');
     expect((await orch.getLaunchStatus(REPO, WT_ID))?.status).toBe('ready');
   });
 
@@ -84,27 +86,44 @@ describe('session orchestrator — launch', () => {
     expect(status.repoId).not.toBe(`${REPO}/${WT_ID}`);
   });
 
-  it('resolves a launch subprocess failure to a typed error leaving no live session', async () => {
+  it('resolves a tmux launch failure to a typed SESSION error (tmux-failure), no live session', async () => {
     const failing: TmuxRunner = {
       ...tmux,
       newSession: async () => {
-        throw new Error('tmux missing');
+        throw new TmuxLaunchError(1);
       },
     };
     const orch = make({ tmuxRunner: failing });
     await orch.launchSession(REPO, WT_ID);
     const settled = await orch.whenSettled(REPO, WT_ID);
     expect(settled?.status).toBe('error');
+    // A SESSION failure kind, never the clone `git-failure` kind.
+    expect(settled?.error?.kind).toBe('tmux-failure');
     expect(await tmux.hasSession(tmuxSessionName(REPO, WT_ID))).toBe(false);
   });
 
-  it('refuses to launch for a worktree that does not exist (typed error, no session)', async () => {
+  it('maps an unclassified launch failure to the SESSION launch-failed kind (not git-failure)', async () => {
+    const failing: TmuxRunner = {
+      ...tmux,
+      newSession: async () => {
+        throw new Error('something opaque');
+      },
+    };
+    const orch = make({ tmuxRunner: failing });
+    await orch.launchSession(REPO, WT_ID);
+    const settled = await orch.whenSettled(REPO, WT_ID);
+    expect(settled?.status).toBe('error');
+    expect(settled?.error?.kind).toBe('launch-failed');
+  });
+
+  it('refuses to launch for a worktree that does not exist (typed no-worktree error, no session)', async () => {
     const orch = make({
       worktreeService: fakeWorktreeView({ isWorktreeComplete: async () => false }),
     });
     await orch.launchSession(REPO, WT_ID);
     const settled = await orch.whenSettled(REPO, WT_ID);
     expect(settled?.status).toBe('error');
+    expect(settled?.error?.kind).toBe('no-worktree');
     expect(tmux.calls).toHaveLength(0);
   });
 

@@ -78,6 +78,59 @@ export type SessionStopRequest = z.infer<typeof sessionStopRequestSchema>;
 export const plugSessionStatusSchema = z.enum(['off', 'starting', 'on', 'error']);
 export type PlugSessionStatus = z.infer<typeof plugSessionStatusSchema>;
 
+// --- Session launch status (Decisions 2 + 5) --------------------------------
+
+/**
+ * The session LAUNCH lifecycle state — the launch op's status, reported by the launch + launch-status
+ * routes. Deliberately DISTINCT from the clone `OperationStatus` (`cloning | ready | error | aborted`
+ * with git error kinds): a session launch is its own operation with its own transient and its own
+ * failure vocabulary, so a launch is never mistaken for a clone op. `starting` is the in-flight
+ * transient (ledger `pending`/`running`), `ready` means the launch op SUCCEEDED (a tmux session was
+ * created) — plug liveness stays tmux-authoritative, so a `ready` op whose session was killed
+ * externally still reads `off`; `error` is a typed launch failure; `aborted` a cancelled launch.
+ */
+export const sessionLaunchStateSchema = z.enum(['starting', 'ready', 'error', 'aborted']);
+export type SessionLaunchState = z.infer<typeof sessionLaunchStateSchema>;
+
+/**
+ * The typed failure kinds a session launch can record — SESSION kinds, never clone/git kinds:
+ * `no-worktree` (launch targeted a missing worktree), `tmux-failure` (the tmux/`claude` subprocess
+ * failed to start), `launch-failed` (any other launch failure). Carries only a kind, never raw
+ * subprocess text (no-leak).
+ */
+export const sessionLaunchErrorKindSchema = z.enum([
+  'no-worktree',
+  'tmux-failure',
+  'launch-failed',
+]);
+export type SessionLaunchErrorKind = z.infer<typeof sessionLaunchErrorKindSchema>;
+
+export const sessionLaunchErrorSchema = z.object({ kind: sessionLaunchErrorKindSchema });
+export type SessionLaunchFailure = z.infer<typeof sessionLaunchErrorSchema>;
+
+/**
+ * The session launch-status response, shared by the launch + launch-status routes. Mirrors the
+ * clone `OperationStatus` SHAPE (`repoId`/`operationId`/`status`/optional `error`) but with the
+ * session-specific state + failure vocabulary. `repoId` carries the session op key
+ * (`session/<repo-id>/<wt-id>`), `status` the launch lifecycle, `error` the typed session failure.
+ */
+export const sessionLaunchStatusSchema = z.object({
+  repoId: z.string(),
+  operationId: z.string(),
+  status: sessionLaunchStateSchema,
+  error: sessionLaunchErrorSchema.optional(),
+});
+export type SessionLaunchStatus = z.infer<typeof sessionLaunchStatusSchema>;
+
+/**
+ * True once a launch op has reached a terminal state (anything but the in-flight `starting`). The
+ * web's launch-status poll uses this to stop refetching, mirroring the clone status poll's
+ * `!== 'cloning'` terminal check.
+ */
+export function isTerminalLaunchState(status: SessionLaunchState): boolean {
+  return status !== 'starting';
+}
+
 /**
  * One listed session: existence + worktree mapping ONLY (Decision 4). Listing reports live sessions
  * (`status: 'on'`) for the repo's existing worktrees; it carries NO conversation metadata (model,

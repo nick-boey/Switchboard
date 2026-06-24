@@ -3,6 +3,7 @@ import type {
   OperationStatus,
   RepoListResponse,
   RepoTarget,
+  SessionLaunchStatus,
   SessionListResponse,
   WorktreeListResponse,
   WorktreeMode,
@@ -121,16 +122,17 @@ export type _SessStopRequestContract = Expect<
   Equal<InferRequestType<SessStopPost>['json'], { repoId: string; wtId: string }>
 >;
 
-// Launch + launch-status return the shared operation status; stop reports a typed stopped outcome;
-// the per-repo list returns the shared existence + mapping response.
+// Launch + launch-status return the SESSION launch status (NOT the clone `OperationStatus`): a
+// session launch is its own operation with its own transient (`starting`) and typed session failure
+// kinds. Stop reports a typed stopped outcome; the per-repo list returns the existence + mapping.
 export type _SessLaunchResponseContract = Expect<
-  Equal<InferResponseType<SessLaunchPost, 200>, OperationStatus>
+  Equal<InferResponseType<SessLaunchPost, 200>, SessionLaunchStatus>
 >;
 export type _SessStopResponseContract = Expect<
   Equal<InferResponseType<SessStopPost, 200>, { status: 'stopped' }>
 >;
 export type _SessStatusResponseContract = Expect<
-  Equal<InferResponseType<SessStatusGet, 200>, OperationStatus>
+  Equal<InferResponseType<SessStatusGet, 200>, SessionLaunchStatus>
 >;
 export type _SessListResponseContract = Expect<
   Equal<InferResponseType<SessListGet, 200>, SessionListResponse>

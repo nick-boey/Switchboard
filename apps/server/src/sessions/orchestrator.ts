@@ -2,9 +2,11 @@ import { join } from 'node:path';
 import {
   parseRepoTarget,
   tmuxSessionName,
-  type OperationStatus,
   type RepoTarget,
   type RuntimeContext,
+  type SessionLaunchErrorKind,
+  type SessionLaunchState,
+  type SessionLaunchStatus,
   type SessionSummary,
   type WorktreeSummary,
 } from '@switchboard/shared';
@@ -45,25 +47,25 @@ export interface SessionWorktreeView {
   listWorktrees(target: RepoTarget): Promise<WorktreeSummary[]>;
 }
 
-/** A typed launch failure — carries only a kind, never raw subprocess text (no-leak). */
+/** A typed launch failure — carries only a SESSION kind, never raw subprocess text (no-leak). */
 export class SessionLaunchError extends Error {
-  constructor(readonly kind: string) {
+  constructor(readonly kind: SessionLaunchErrorKind) {
     super(`session launch failed (${kind})`);
     this.name = 'SessionLaunchError';
   }
 }
 
 export interface SessionOrchestrator {
-  /** Launch (or idempotently reuse) a session; returns the launch op's status. */
-  launchSession(repoId: string, wtId: string): Promise<OperationStatus>;
+  /** Launch (or idempotently reuse) a session; returns the SESSION launch status. */
+  launchSession(repoId: string, wtId: string): Promise<SessionLaunchStatus>;
   /** Stop a session (kill its tmux session); idempotent, serialized with launch (Decision 6). */
   stopSession(repoId: string, wtId: string): Promise<void>;
-  /** The launch operation's status (the `starting`/`error` poll target). */
-  getLaunchStatus(repoId: string, wtId: string): Promise<OperationStatus | null>;
+  /** The launch operation's SESSION status (the `starting`/`error` poll target). */
+  getLaunchStatus(repoId: string, wtId: string): Promise<SessionLaunchStatus | null>;
   /** Existence + worktree mapping for the repo's live sessions (Decision 4). */
   listSessions(target: RepoTarget): Promise<SessionSummary[]>;
   /** Resolve once the current launch worker for this session has settled (test/stop aid). */
-  whenSettled(repoId: string, wtId: string): Promise<OperationStatus | null>;
+  whenSettled(repoId: string, wtId: string): Promise<SessionLaunchStatus | null>;
   reconcile(): Promise<void>;
 }
 
@@ -76,12 +78,30 @@ export interface SessionOrchestratorDeps {
   lock?: KeyedLock;
 }
 
-const STATE_TO_STATUS: Record<OperationRecord['state'], OperationStatus['status']> = {
-  pending: 'cloning',
-  running: 'cloning',
+/**
+ * The ledger op state → SESSION launch status (Decision 2 + 5). The clone vocabulary
+ * (`cloning`/`git-failure`) is DELIBERATELY not reused: an in-flight launch is `starting` (the spec's
+ * transient), a settled-ok launch is `ready`, a failed launch is `error`. Liveness stays
+ * tmux-authoritative — a `ready` record whose session vanished still reads `off` downstream.
+ */
+const STATE_TO_SESSION_STATUS: Record<OperationRecord['state'], SessionLaunchState> = {
+  pending: 'starting',
+  running: 'starting',
   succeeded: 'ready',
   failed: 'error',
   aborted: 'aborted',
+};
+
+/**
+ * The ledger's stored failure `kind` → a typed SESSION failure kind. The session worker raises
+ * `SessionLaunchError('no-worktree')` and the tmux seam raises `TmuxLaunchError` (kind
+ * `tmux-failure`); any other/unclassified failure (the ledger's `git-failure` default) collapses to
+ * the generic `launch-failed` — never the clone `git-failure` kind.
+ */
+const LEDGER_KIND_TO_SESSION_KIND: Record<string, SessionLaunchErrorKind> = {
+  'no-worktree': 'no-worktree',
+  'tmux-failure': 'tmux-failure',
+  'launch-failed': 'launch-failed',
 };
 
 /** The per-session operation key — a namespace distinct from worktree-create's `<repo-id>/<wt-id>`. */
@@ -93,12 +113,16 @@ function partsForKey(key: string): { target: RepoTarget; repoId: string; wtId: s
   return { target: { owner, repo }, repoId: `${owner}/${repo}`, wtId };
 }
 
-function toStatus(record: OperationRecord): OperationStatus {
+function toSessionStatus(record: OperationRecord): SessionLaunchStatus {
   return {
     repoId: record.key,
     operationId: record.id,
-    status: STATE_TO_STATUS[record.state],
-    ...(record.state === 'failed' ? { error: { kind: 'git-failure' as const } } : {}),
+    status: STATE_TO_SESSION_STATUS[record.state],
+    ...(record.state === 'failed'
+      ? {
+          error: { kind: LEDGER_KIND_TO_SESSION_KIND[record.error?.kind ?? ''] ?? 'launch-failed' },
+        }
+      : {}),
   };
 }
 
@@ -164,7 +188,7 @@ export function createSessionOrchestrator(
           await tmuxRunner.newSession(name, path, [...CLAUDE_LAUNCH_COMMAND]);
         },
       });
-      return toStatus(op);
+      return toSessionStatus(op);
     },
 
     async stopSession(repoId, wtId) {
@@ -195,7 +219,7 @@ export function createSessionOrchestrator(
 
     async getLaunchStatus(repoId, wtId) {
       const record = await ledger.get(sessionKey(repoId, wtId));
-      return record ? toStatus(record) : null;
+      return record ? toSessionStatus(record) : null;
     },
 
     async listSessions(target) {

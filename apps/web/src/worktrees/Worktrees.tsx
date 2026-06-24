@@ -4,13 +4,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   OperationStatus,
   PlugSessionStatus,
+  SessionLaunchStatus,
   WorktreeListResponse,
   WorktreeSummary,
 } from '@switchboard/shared';
+import { isTerminalLaunchState } from '@switchboard/shared';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import {
   deriveSessionStatus,
   dispatchPlugToggle,
+  fetchLaunchStatus,
   fetchLiveSessions,
   requestLaunch,
   requestStop,
@@ -169,16 +172,46 @@ export function Worktrees({
   const invalidateLiveness = (): void => {
     void queryClient.invalidateQueries({ queryKey: sessionLivenessQueryKey(repoId) });
   };
+
+  // The worktree whose launch operation is being tracked. The launch POST resolves at `starting`
+  // (the ledger has a running worker, but tmux hasn't settled), so the plug can't rely on the
+  // mutation's HTTP-pending state alone — we poll this op until terminal (mirroring the create-status
+  // poll), keeping the plug in `starting` for a slow launch and surfacing an async failure as `error`.
+  const [launchingWtId, setLaunchingWtId] = useState<string | null>(null);
+
   const launchMut = useMutation({
     mutationFn: (wtId: string) => requestLaunch(client, repoId, wtId),
+    onSuccess: (_status, wtId) => setLaunchingWtId(wtId), // begin polling this launch op
     onSettled: invalidateLiveness,
   });
   const stopMut = useMutation({
     mutationFn: (wtId: string) => requestStop(client, repoId, wtId),
+    onMutate: () => setLaunchingWtId(null), // a stop supersedes any tracked launch op
     onSettled: invalidateLiveness,
   });
 
-  // The worktree whose session is mid-mutation (optimistic transient) or whose last mutation failed.
+  // Poll the tracked launch operation to a terminal state (then stop). Mirrors the create-status
+  // poll's `refetchInterval` that returns `false` once the op settles.
+  const launchStatusQuery = useQuery({
+    queryKey: ['session-launch-status', repoId, launchingWtId],
+    enabled: launchingWtId !== null,
+    queryFn: (): Promise<SessionLaunchStatus | null> =>
+      fetchLaunchStatus(client, repoId, launchingWtId!),
+    refetchInterval: (q) =>
+      q.state.data && isTerminalLaunchState(q.state.data.status) ? false : 700,
+  });
+
+  // When the tracked launch settles, refresh liveness: a `ready` op flips the plug to `on` from the
+  // next tmux read; an `error` op keeps the tracked op so the plug stays `error` until the user acts.
+  const launchOpStatus = launchStatusQuery.data?.status;
+  useEffect(() => {
+    if (launchOpStatus && isTerminalLaunchState(launchOpStatus)) {
+      void queryClient.invalidateQueries({ queryKey: sessionLivenessQueryKey(repoId) });
+      if (launchOpStatus === 'ready') setLaunchingWtId(null);
+    }
+  }, [launchOpStatus, queryClient, repoId]);
+
+  // The worktree whose session POST is mid-flight (optimistic transient) or whose last POST failed.
   const pendingWt = launchMut.isPending
     ? launchMut.variables
     : stopMut.isPending
@@ -197,6 +230,8 @@ export function Worktrees({
       live: liveSet.has(wt.wtId),
       pending: pendingWt === wt.wtId,
       failed: failedWt === wt.wtId,
+      // The polled launch op only governs the worktree it is tracking.
+      launchOp: launchingWtId === wt.wtId ? launchOpStatus : undefined,
     });
   }
 

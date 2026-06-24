@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { idForBranch } from './worktrees.js';
 import {
+  isTerminalLaunchState,
   isValidTmuxSessionName,
   sessionLaunchRequestSchema,
+  sessionLaunchStatusSchema,
   sessionListResponseSchema,
   sessionStopRequestSchema,
   sessionSummarySchema,
@@ -96,5 +98,49 @@ describe('session request/response schemas', () => {
     // A summary rejects any conversation-metadata field (existence + mapping only).
     expect(sessionSummarySchema.safeParse({ repoId, wtId, status: 'on' }).success).toBe(true);
     expect(sessionSummarySchema.safeParse({ repoId, wtId, status: 'off' }).success).toBe(false);
+  });
+});
+
+describe('session launch status schema (distinct from the clone OperationStatus)', () => {
+  const repoId = 'session/acme/widget-factory/feature-login--0123456789ab';
+
+  it('accepts the session launch states and typed SESSION failure kinds', () => {
+    for (const status of ['starting', 'ready', 'error', 'aborted'] as const) {
+      expect(
+        sessionLaunchStatusSchema.safeParse({ repoId, operationId: 'op-1', status }).success,
+      ).toBe(true);
+    }
+    for (const kind of ['no-worktree', 'tmux-failure', 'launch-failed'] as const) {
+      expect(
+        sessionLaunchStatusSchema.safeParse({
+          repoId,
+          operationId: 'op-1',
+          status: 'error',
+          error: { kind },
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it('rejects the clone vocabulary (`cloning` state, `git-failure` kind)', () => {
+    expect(
+      sessionLaunchStatusSchema.safeParse({ repoId, operationId: 'op-1', status: 'cloning' })
+        .success,
+    ).toBe(false);
+    expect(
+      sessionLaunchStatusSchema.safeParse({
+        repoId,
+        operationId: 'op-1',
+        status: 'error',
+        error: { kind: 'git-failure' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('isTerminalLaunchState is true for every settled state, false for the in-flight transient', () => {
+    expect(isTerminalLaunchState('starting')).toBe(false);
+    expect(isTerminalLaunchState('ready')).toBe(true);
+    expect(isTerminalLaunchState('error')).toBe(true);
+    expect(isTerminalLaunchState('aborted')).toBe(true);
   });
 });
