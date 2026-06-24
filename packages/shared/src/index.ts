@@ -77,6 +77,26 @@ export type {
   WorktreeDeleteRequest,
 } from './worktrees.js';
 
+// Claude-session-launch slice contracts + the tmux session-name scheme (design Decisions 1, 4,
+// 5, 8). `tmuxSessionName` reuses the canonical `slugForBranch` + `sha256Hex` primitives (browser-
+// safe) over `(repo-id, wt-id)`, so it lives in this barrel beside `idForBranch`.
+export {
+  tmuxSessionName,
+  isValidTmuxSessionName,
+  sessionLaunchRequestSchema,
+  sessionStopRequestSchema,
+  plugSessionStatusSchema,
+  sessionSummarySchema,
+  sessionListResponseSchema,
+} from './sessions.js';
+export type {
+  SessionLaunchRequest,
+  SessionStopRequest,
+  PlugSessionStatus,
+  SessionSummary,
+  SessionListResponse,
+} from './sessions.js';
+
 // Typed API client factory (design Decision 4). Generic over the server's `AppType` to keep
 // `packages/shared` free of a project-reference cycle back to `apps/server`.
 export { createApiClient } from './client.js';

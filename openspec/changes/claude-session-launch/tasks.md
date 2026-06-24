@@ -1,6 +1,6 @@
 ## 1. Test infrastructure
 
-- [ ] 1.1 Build the controllable in-memory **fake `TmuxRunner`** in
+- [x] 1.1 Build the controllable in-memory **fake `TmuxRunner`** in
       `apps/server/src/testing/tmux-runner.ts` (the GitRunner fake is the precedent): a `Map` of live
       session names that records `newSession` calls (name, cwd, command — so launch wiring and
       redaction can be asserted) and answers `hasSession` / `listSessions` / `killSession`, plus a
@@ -10,13 +10,13 @@
 
 ## 2. Shared: tmux session naming + session schemas (packages/shared)
 
-- [ ] 2.1 (red) Write `packages/shared/src/sessions.test.ts`: `tmuxSessionName(repoId, wtId)` is
+- [x] 2.1 (red) Write `packages/shared/src/sessions.test.ts`: `tmuxSessionName(repoId, wtId)` is
       deterministic, tmux-safe (no `.`/`:`/`/`/whitespace), carries the `sb-` prefix, is **distinct
       for the same branch across different repos** and **stable for the same `(repoId, wtId)`**, and
       reuses the canonical `slugForBranch`/`sha256Hex` primitives; `isValidTmuxSessionName` accepts
       derived names and rejects malformed ones; the launch/stop/list request schemas parse valid
       input and reject malformed `<repo-id>`/`<wt-id>`.
-- [ ] 2.2 (green) Implement `packages/shared/src/sessions.ts`: `tmuxSessionName` (composing
+- [x] 2.2 (green) Implement `packages/shared/src/sessions.ts`: `tmuxSessionName` (composing
       `slugForBranch` + `sha256Hex`, folding `.`→`-`), `isValidTmuxSessionName`, the session
       launch/stop request schemas (`<repo-id>` + `<wt-id>`), the session summary + list-response
       schemas (existence + mapping only), and the plug-status type; reuse `operationStatusSchema` for
