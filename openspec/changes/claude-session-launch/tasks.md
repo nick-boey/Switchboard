@@ -84,18 +84,18 @@
 
 ## 7. Server: stop / teardown (apps/server)
 
-- [ ] 7.1 (red) Write the failing tests: stopping a live session kills it and liveness flips to off;
+- [x] 7.1 (red) Write the failing tests: stopping a live session kills it and liveness flips to off;
       stopping an absent session is an **idempotent no-op success**; stop never touches the worktree
       or branch; a force-deleted worktree's live session is **not auto-killed** and the resulting tmux
       orphan is **not surfaced by the listing** (out of scope — needs manual cleanup).
-- [ ] 7.2 (green) Implement `stopSession` on the orchestrator (`tmuxRunner.killSession`), **not**
+- [x] 7.2 (green) Implement `stopSession` on the orchestrator (`tmuxRunner.killSession`), **not**
       ledgered — tmux truth is authoritative for the resulting state. Order it to serialize with launch
       **without deadlocking**: first **drain** any in-flight launch via `ledger.whenSettled(key)` with
       the per-session lock **released** (the launch worker settles only after it reacquires that same
       lock, so awaiting settlement while holding the lock would hang), **then** kill
       `tmuxRunner.killSession(name)` **under** `lock.run('session/<repo-id>/<wt-id>', …)` (the shared
       `KeyedLock` injected into the session ledger — the SAME key launch locks).
-- [ ] 7.3 (red) Write the failing **concurrency** tests (fake TmuxRunner + ledger scaffolding): a
+- [x] 7.3 (red) Write the failing **concurrency** tests (fake TmuxRunner + ledger scaffolding): a
       launch racing a stop, and a stop racing a duplicate launch, both serialize on the per-session
       boundary — assert the **final liveness** (off) and the **launch operation status** (settled
       `succeeded`, exactly one session created then killed), proving a stop never kills nothing while a
@@ -108,7 +108,7 @@
       **Add the launch-between-drain-and-lock case:** a launch that registers after the stop's first
       drain is still drained-and-killed by the loop (final liveness `off`), proving the in-flight
       re-check prevents a strand.
-- [ ] 7.4 (green) Serialize all session lifecycle mutations on one per-session boundary **without
+- [x] 7.4 (green) Serialize all session lifecycle mutations on one per-session boundary **without
       deadlocking**: construct one shared `KeyedLock`, inject it into the session ledger
       (`OperationLedgerConfig.lock`) so launch and the stale-record reconcile (4.4) lock the per-session
       key. Implement `stopSession` as a **drain-then-lock loop**: (1) `await ledger.whenSettled(key)`
