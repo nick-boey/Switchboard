@@ -134,19 +134,19 @@
 
 ## 10. Docs: planned-architecture overlay + runtime guide + README (docs-migration rows)
 
-- [ ] 10.1 Author `docs/dev/Architecture/Planned/runtime-cli-docker.c4`: `extend` `Switchboard.Cli`
+- [x] 10.1 Author `docs/dev/Architecture/Planned/runtime-cli-docker.c4`: `extend` `Switchboard.Cli`
       with its orchestration/supervision role (config bootstrap, supervised `start(ctx)`, `--docker`
       bring-up of `tailscaled` + `tailscale serve`) and realise the `Tailscale -> Switchboard.Api`
       serve ingress **over the dedicated loopback serve port**; tag every addition `#todo`; prefix view
       ids `runtime-cli-docker-*`;
       list the added element/view ids in `plan.md`; validate with `pnpm --dir site exec likec4 validate
       --no-layout ../docs/dev/Architecture`. (The Architecture review checkpoint fires when this lands.)
-- [ ] 10.2 Author `docs/user/running-switchboard.md` (docs-migration `author →` row): npm install +
+- [x] 10.2 Author `docs/user/running-switchboard.md` (docs-migration `author →` row): npm install +
       local `switchboard start`; the Docker run (image, named volumes, mounted PAT + auth-key secrets,
       userspace vs kernel-TUN); Tailscale prerequisites (auth key, MagicDNS + HTTPS certs for `tailscale
       serve`); the **in-container `claude` login + `~/.claude` volume** credential strategy (macOS
       keychain caveat); and the dedicated serve-ingress vs bearer-loopback access model.
-- [ ] 10.3 Merge into `README.md` (docs-migration `merge →` row): the **npm distribution** install path
+- [x] 10.3 Merge into `README.md` (docs-migration `merge →` row): the **npm distribution** install path
       (`npx switchboard` / `npm i -g`) and a "run on the tailnet (Docker)" pointer to
       `docs/user/running-switchboard.md`.
 

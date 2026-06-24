@@ -42,6 +42,18 @@ The LikeC4 overlay `docs/dev/Architecture/Planned/runtime-cli-docker.c4` (extend
 **authored during this change's full planning stage** — deferred here as a roadmap scaffold.
 The Architecture review checkpoint fires when that overlay lands.
 
+**Added overlay ids** (all `#todo` until graduated; validates with `pnpm --dir site exec likec4
+validate --no-layout ../docs/dev/Architecture`):
+
+- Elements (components in `Switchboard.Cli`): `Switchboard.Cli.configBootstrap`,
+  `Switchboard.Cli.serverSupervisor`, `Switchboard.Cli.dockerBringUp`.
+- Relationships: `serverSupervisor -> configBootstrap`, `dockerBringUp -> configBootstrap`,
+  `dockerBringUp -> serverSupervisor`, `serverSupervisor -> Switchboard.Api`,
+  `dockerBringUp -> Tailscale`, and the realised `Tailscale -> Switchboard.Api` over the dedicated
+  loopback serve port.
+- Views: `runtime-cli-docker-cli` (of `Switchboard.Cli`), `runtime-cli-docker-ingress`
+  (of `Switchboard`).
+
 ## Decisions
 
 Inherited from the programme page and spike 0: **TypeScript** CLI, thin `apps/cli` package,
