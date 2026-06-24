@@ -124,7 +124,7 @@
 
 ## 9. Ops: production Dockerfile + runtime image (productionize the spike)
 
-- [ ] 9.1 Author the production `Dockerfile` (productionizing `spikes/runtime/`): base matching the
+- [x] 9.1 Author the production `Dockerfile` (productionizing `spikes/runtime/`): base matching the
       repo Node engine, with `tailscale` + `tmux` + `git` + `ca-certificates`; bundle the built CLI;
       `ENTRYPOINT` runs `switchboard start --docker`; publish **no** API port; document the userspace
       default and the kernel-TUN fallback (`--cap-add=NET_ADMIN --device=/dev/net/tun`); declare the

@@ -1,0 +1,15 @@
+# Keep the build context lean and reproducible: never ship local build output, deps, or VCS/state
+# into the image. The builder stage runs `pnpm install --frozen-lockfile` + `pnpm -r build` itself.
+**/node_modules
+**/dist
+**/dist-types
+**/*.tsbuildinfo
+.git
+.github
+**/.turbo
+**/coverage
+**/test-results
+**/playwright-report
+# Local Switchboard state / secrets must never enter the build context.
+.switchboard
+spikes/runtime/.env
