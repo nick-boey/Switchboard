@@ -133,12 +133,12 @@
 
 ## 9. Web: session client logic (apps/web/src/sessions)
 
-- [ ] 9.1 (red) Write the failing tests for the session slice's web logic: a per-repo
+- [x] 9.1 (red) Write the failing tests for the session slice's web logic: a per-repo
       session-liveness query (TanStack Query against the typed client) and launch/stop mutations, and
       a session→plug-status mapping yielding `off` / `starting` / `on` / `error` (off = no live
       session, starting = launch in flight, on = live, error = failed launch/stop), self-correcting
       from tmux truth on the next read.
-- [ ] 9.2 (green) Implement `apps/web/src/sessions/` (the query + mutations + the status mapping +
+- [x] 9.2 (green) Implement `apps/web/src/sessions/` (the query + mutations + the status mapping +
       barrel), consuming the typed client/contract — no import from `src/prototypes/**`.
 
 ## 10. Web: make the plug actionable on the worktrees hub (apps/web/src/worktrees)
