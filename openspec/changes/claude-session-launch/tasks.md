@@ -170,5 +170,5 @@
 
 ## 13. Verification gate
 
-- [ ] 13.1 Run `just test`, `just lint`, `just typecheck`, then `just build` + `just e2e` — all green;
+- [x] 13.1 Run `just test`, `just lint`, `just typecheck`, then `just build` + `just e2e` — all green;
       confirm prettier-clean and that `openspec validate claude-session-launch --strict` passes.

@@ -4,11 +4,7 @@ import { tmuxSessionName, type RepoTarget, type WorktreeSummary } from '@switchb
 import { makeServerTestContext } from '../testing/operation-scaffolding.js';
 import { fakeTmuxRunner, type FakeTmuxRunner } from '../testing/tmux-runner.js';
 import type { TmuxRunner } from './tmux-runner.js';
-import {
-  createSessionOrchestrator,
-  type SessionOrchestrator,
-  type SessionWorktreeView,
-} from './orchestrator.js';
+import { createSessionOrchestrator, type SessionWorktreeView } from './orchestrator.js';
 
 /**
  * Session launch-through-the-ledger tests (task 4.1, design Decision 2). A launch spawns the
