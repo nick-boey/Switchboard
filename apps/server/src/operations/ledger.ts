@@ -17,8 +17,12 @@ import { systemClock, systemProcessProbe, type Clock, type ProcessProbe } from '
  */
 
 export type OperationState = 'pending' | 'running' | 'succeeded' | 'failed' | 'aborted';
-/** Additive: `worktree` joins `clone` (design Decision 3 / worktree-management Decision 3). */
-export type OperationType = 'clone' | 'worktree';
+/**
+ * Additive: `worktree` joins `clone`, then `session` joins both (design Decision 3 /
+ * worktree-management Decision 3 / claude-session-launch Decision 2). Each orchestrator registers a
+ * handler only for the type(s) it owns; the shared store is left untouched for unhandled types.
+ */
+export type OperationType = 'clone' | 'worktree' | 'session';
 
 export interface OperationError {
   kind: string;
@@ -49,6 +53,15 @@ export interface OperationHandler {
   isComplete(record: OperationRecord): boolean | Promise<boolean>;
   /** Remove the operation's incomplete target (the caller gates this on `isComplete`). */
   cleanup(record: OperationRecord): void | Promise<void>;
+  /**
+   * When true, a settled `succeeded` record is reusable for idempotency ONLY while its completion
+   * marker still holds (claude-session-launch Decision 2). The marker for a `session` op is the
+   * live tmux session, which can vanish OUTSIDE Switchboard — so before reusing a `succeeded`
+   * record the ledger re-checks `isComplete`; a stale record (marker gone) is superseded by a fresh
+   * op. Durable filesystem-marker ops (clone/worktree) leave this unset, so their reuse is
+   * unchanged in practice (the on-disk marker normally still holds).
+   */
+  reuseRequiresMarker?: boolean;
 }
 
 /** Context handed to a worker so it can observe cancellation and report its pid. */
@@ -180,7 +193,21 @@ export function createOperationLedger(config: OperationLedgerConfig): OperationL
     async start({ type, key, metadata, run }) {
       return lock.run(key, async () => {
         const existing = read(key);
-        if (existing && ACTIVE.has(existing.state)) return existing;
+        if (existing && ACTIVE.has(existing.state)) {
+          // A volatile-marker op (e.g. `session`, whose marker is the live tmux session) is only
+          // reusable while its marker still holds. A `succeeded` record whose marker vanished
+          // externally is STALE — re-check `isComplete` (mirroring the abort/reconcile re-checks,
+          // and run here under the per-key lock) and, when the marker is gone, fall through to start
+          // a FRESH op that re-creates the target. Durable-marker ops (clone/worktree) leave
+          // `reuseRequiresMarker` unset, so their reuse is unchanged. Pending/running records are
+          // always reused (a launch is genuinely in flight).
+          const handler = handlers[existing.type];
+          const stale =
+            existing.state === 'succeeded' &&
+            handler?.reuseRequiresMarker === true &&
+            !(await handler.isComplete(existing));
+          if (!stale) return existing;
+        }
         const record: OperationRecord = {
           id: randomUUID(),
           type,

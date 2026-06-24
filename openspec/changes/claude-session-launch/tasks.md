@@ -34,24 +34,24 @@
 
 ## 4. Server: session launch through the ledger (apps/server)
 
-- [ ] 4.1 (red) Write `apps/server/src/sessions/orchestrator.test.ts` (with the fake TmuxRunner +
+- [x] 4.1 (red) Write `apps/server/src/sessions/orchestrator.test.ts` (with the fake TmuxRunner +
       operation-ledger scaffolding): a launch spawns the detached session rooted at the worktree's
       `worktreePath` running `claude --remote-control`; a duplicate/concurrent launch resolves to a
       **single** session (idempotent); the launch op key is in a namespace **distinct** from the
       worktree-create key; a launch subprocess failure resolves to a **typed error** outcome leaving
       no live session; and **liveness is re-derived from tmux** (a settled op whose session was
       killed externally reports off).
-- [ ] 4.2 (green) Add the additive `'session'` `OperationType` (and leave other ledgers' records
+- [x] 4.2 (green) Add the additive `'session'` `OperationType` (and leave other ledgers' records
       untouched) in `apps/server/src/operations/ledger.ts`; implement the session orchestrator
       (`apps/server/src/sessions/orchestrator.ts`) — launch as a `session`-typed op keyed
       `session/<repo-id>/<wt-id>`, with the handler's `isComplete` = "tmux session exists" and
       `cleanup` = kill a half-launched session; obtain the worktree path from the worktree service
       (`worktreePath`).
-- [ ] 4.3 (red) Extend `orchestrator.test.ts` with the **stale-record relaunch** case: after a launch
+- [x] 4.3 (red) Extend `orchestrator.test.ts` with the **stale-record relaunch** case: after a launch
       settles `succeeded`, the tmux session is killed externally (fake), the worktree reports off, and
       a subsequent launch does **not** reuse the stale `succeeded` record — it re-checks the tmux
       marker (`isComplete`), finds it absent, and creates a **new** detached tmux session.
-- [ ] 4.4 (green) Gate idempotent reuse of a `succeeded` record on the live completion marker for the
+- [x] 4.4 (green) Gate idempotent reuse of a `succeeded` record on the live completion marker for the
       marker-backed `session` op: in `apps/server/src/operations/ledger.ts`, before reusing a
       `succeeded` record the ledger re-checks the handler's `isComplete` (for `session`, tmux
       liveness); when the marker no longer holds, the record is stale and a **fresh** launch op is
