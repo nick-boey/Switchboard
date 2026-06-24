@@ -5,6 +5,7 @@
  */
 export { createTmuxRunner, TmuxLaunchError } from './tmux-runner.js';
 export type { TmuxRunner } from './tmux-runner.js';
+export { createSessionProbe } from './session-probe.js';
 export { createSessionOrchestrator, sessionKey, SessionLaunchError } from './orchestrator.js';
 export type {
   SessionOrchestrator,

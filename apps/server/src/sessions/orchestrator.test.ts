@@ -144,3 +144,40 @@ describe('session orchestrator — launch', () => {
     expect(await tmux.hasSession(name)).toBe(true);
   });
 });
+
+describe('session orchestrator — listSessions (tmux truth, existence + mapping only)', () => {
+  const wt = (wtId: string): WorktreeSummary => ({
+    wtId,
+    branch: 'b',
+    path: `p/${wtId}`,
+    dirty: false,
+    sync: 'up-to-date',
+  });
+  const target: RepoTarget = { owner: 'acme', repo: 'widget-factory' };
+  const liveId = 'feature-live--0123456789ab';
+  const idleId = 'feature-idle--0123456789ab';
+
+  it('lists only live sessions for the repo’s existing worktrees, mapped to (repoId, wtId)', async () => {
+    const { ctx } = makeServerTestContext();
+    const tmux = fakeTmuxRunner([tmuxSessionName(REPO, liveId)]);
+    const orch = createSessionOrchestrator(ctx, {
+      worktreeService: fakeWorktreeView({ listWorktrees: async () => [wt(liveId), wt(idleId)] }),
+      tmuxRunner: tmux,
+    });
+    const sessions = await orch.listSessions(target);
+    expect(sessions).toEqual([{ repoId: REPO, wtId: liveId, status: 'on' }]);
+    rmSync(ctx.workspaceRoot, { recursive: true, force: true });
+  });
+
+  it('does not surface an orphan whose worktree was deleted (not in the existing set)', async () => {
+    const { ctx } = makeServerTestContext();
+    // An orphaned session is live in tmux, but its worktree no longer exists → not derivable.
+    const tmux = fakeTmuxRunner([tmuxSessionName(REPO, 'deleted-wt--0123456789ab')]);
+    const orch = createSessionOrchestrator(ctx, {
+      worktreeService: fakeWorktreeView({ listWorktrees: async () => [wt(idleId)] }),
+      tmuxRunner: tmux,
+    });
+    expect(await orch.listSessions(target)).toEqual([]);
+    rmSync(ctx.workspaceRoot, { recursive: true, force: true });
+  });
+});

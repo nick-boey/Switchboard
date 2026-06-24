@@ -17,6 +17,7 @@ import {
   type OperationRecord,
   type ProcessProbe,
 } from '../operations/index.js';
+import { createSessionProbe } from './session-probe.js';
 import type { TmuxRunner } from './tmux-runner.js';
 
 /**
@@ -109,6 +110,8 @@ export function createSessionOrchestrator(
   // ONE shared per-session lock — launch (via the ledger), the stale-record reconcile, and stop's
   // kill all take this same key, so the three are mutually exclusive (Decision 6).
   const lock = deps.lock ?? createKeyedLock();
+  // Liveness/listing derive from tmux truth only (no worktree back-edge, Decision 4).
+  const probe = createSessionProbe(tmuxRunner);
 
   const ledger: OperationLedger = createOperationLedger({
     root: join(ctx.workspaceRoot, 'operations'),
@@ -196,15 +199,14 @@ export function createSessionOrchestrator(
     },
 
     async listSessions(target) {
-      // Forward-derive each EXISTING worktree's session name and test tmux liveness; return
-      // existence + mapping only (Decision 4). A deleted worktree's orphan cannot be derived (it
-      // has left this set) and is therefore out of scope. Group 5 extracts the per-worktree liveness
-      // into the reusable `SessionProbe`; here it is the same forward-derivation, inline.
+      // Iterate the repo's EXISTING worktrees, forward-derive each session name through the probe,
+      // and return existence + mapping only (Decision 4). A deleted worktree's orphan has left this
+      // set — it cannot be derived (names are never decoded) and is therefore out of scope.
       const repoId = `${target.owner}/${target.repo}`;
       const worktrees = await worktreeService.listWorktrees(target);
       const sessions: SessionSummary[] = [];
       for (const wt of worktrees) {
-        if (await tmuxRunner.hasSession(tmuxSessionName(repoId, wt.wtId))) {
+        if (await probe.hasActiveSession(repoId, wt.wtId)) {
           sessions.push({ repoId, wtId: wt.wtId, status: 'on' });
         }
       }

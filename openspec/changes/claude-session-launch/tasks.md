@@ -61,12 +61,12 @@
 
 ## 5. Server: session liveness probe + listing (apps/server)
 
-- [ ] 5.1 (red) Write the failing tests for liveness + listing: `createSessionProbe(tmuxRunner)`
+- [x] 5.1 (red) Write the failing tests for liveness + listing: `createSessionProbe(tmuxRunner)`
       implements `hasActiveSession(repoId, wtId)` by forward-deriving `tmuxSessionName` and testing
       `hasSession` (never decoding a name); listing a repo's sessions iterates the repo's **existing**
       worktrees and returns **existence + worktree mapping only** for live sessions (no conversation
       metadata; a deleted worktree's orphan session is out of scope — not listed).
-- [ ] 5.2 (green) Implement `apps/server/src/sessions/session-probe.ts` (the `SessionProbe` provider,
+- [x] 5.2 (green) Implement `apps/server/src/sessions/session-probe.ts` (the `SessionProbe` provider,
       depending only on `TmuxRunner` + `tmuxSessionName` — no worktree back-dependency) and the
       orchestrator's `listSessions(target)`.
 
