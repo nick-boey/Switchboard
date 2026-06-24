@@ -1,17 +1,21 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Packaged-CLI smoke test (design Decision 8 / task 7.1).
+ * Packaged-CLI smoke test (`runtime-cli-docker` Decision 8).
  *
  * This exercises the BUILT bin (`dist/index.js`), NOT a workspace import — the gate runs the
- * CLI build before the test, so the artifact exists. It asserts the two facts a packaged bin
- * must guarantee: `--version` prints the version, and `start` boots a loopback server whose
- * unauthenticated `/health` answers 200. The child is always terminated and its port freed.
+ * CLI build before the test, so the artifact exists. It asserts the facts a packaged bin must
+ * guarantee: `--version` prints the version; `start` boots a loopback server whose unauthenticated
+ * `/health` answers 200; and `start` with a listen spec that includes the **dedicated serve
+ * ingress** serves `/health` 200 on that port too. The smoke test runs on the HOST, so the serve
+ * port is host-reachable: it runs with `trustServeIdentity` DISABLED (bearer-only) — the
+ * host-reachable serve port is not identity-eligible and forged `tailscale-user-*` markers on it
+ * grant nothing. The child is always terminated and its port freed.
  */
 
 /** The built bin under test (`apps/cli/dist/index.js`). */
@@ -79,6 +83,64 @@ function waitForUrl(child: ChildProcess, getStderr: () => string): Promise<strin
   });
 }
 
+/** Read the child's stdout until the URL line tagged `(tag)` appears (`(direct)` / `(serve)`). */
+function waitForTaggedUrl(
+  child: ChildProcess,
+  tag: string,
+  getStderr: () => string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let buffer = '';
+    const pattern = new RegExp(`\\(${tag}\\) on (https?://127\\.0\\.0\\.1:\\d+)`);
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(
+        new Error(
+          `Timed out waiting for the ${tag} URL.\nstdout:\n${buffer}\nstderr:\n${getStderr()}`,
+        ),
+      );
+    }, BOOT_TIMEOUT_MS);
+    const onData = (chunk: Buffer): void => {
+      buffer += String(chunk);
+      const match = pattern.exec(buffer);
+      if (match) {
+        cleanup();
+        resolve(match[1]);
+      }
+    };
+    const onExit = (code: number | null): void => {
+      cleanup();
+      reject(new Error(`CLI exited early (code ${code}) before the ${tag} URL.\n${getStderr()}`));
+    };
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      child.stdout?.off('data', onData);
+      child.off('exit', onExit);
+    };
+    child.stdout?.on('data', onData);
+    child.on('exit', onExit);
+  });
+}
+
+/** Provision a temp HOME whose `~/.switchboard/config.json` pins the given listen spec. */
+function makeHomeWithConfig(listen: Record<string, unknown>): string {
+  const home = mkdtempSync(join(tmpdir(), 'switchboard-cli-smoke-'));
+  mkdirSync(join(home, '.switchboard'), { recursive: true });
+  // trustServeIdentity is omitted (defaults OFF): the host-reachable serve port is bearer-only.
+  writeFileSync(
+    join(home, '.switchboard', 'config.json'),
+    JSON.stringify({ bearerToken: 'smoke-test-bearer-token', listen }),
+  );
+  return home;
+}
+
+/** The full Tailscale serve markers — forged here (no real serve fronts the host serve port). */
+const FORGED_SERVE_MARKERS: Record<string, string> = {
+  'tailscale-user-login': 'nick-boey@github',
+  'tailscale-headers-info': 'logins=1;caps=0',
+  'x-forwarded-for': '100.100.50.1',
+};
+
 /** SIGINT the child and wait for graceful exit; SIGKILL as a last resort so no port leaks. */
 function terminate(child: ChildProcess): Promise<void> {
   return new Promise((resolve) => {
@@ -123,6 +185,42 @@ describe('packaged switchboard CLI (built bin)', () => {
         const res = await fetch(`${url}/health`);
         expect(res.status, `stderr:\n${stderr}`).toBe(200);
         expect(await res.json()).toEqual({ status: 'ok' });
+      } finally {
+        await terminate(child);
+        rmSync(home, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'start serves /health 200 on the dedicated serve ingress (bearer-only; forged markers grant nothing)',
+    async () => {
+      // A listen spec with BOTH a direct and a dedicated serve loopback port (ephemeral).
+      const home = makeHomeWithConfig({ direct: { port: 0 }, serve: { port: 0 } });
+      const child = spawn(process.execPath, [BIN, 'start'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, HOME: home },
+      });
+      let stderr = '';
+      child.stderr?.on('data', (chunk) => (stderr += String(chunk)));
+
+      try {
+        const serveUrl = await waitForTaggedUrl(child, 'serve', () => stderr);
+
+        // /health is unauthenticated and answers 200 on the dedicated serve port.
+        const health = await fetch(`${serveUrl}/health`);
+        expect(health.status, `stderr:\n${stderr}`).toBe(200);
+        expect(await health.json()).toEqual({ status: 'ok' });
+
+        // The host-reachable serve port is bearer-only: forged serve markers + an allowlisted
+        // login, without a bearer, are NOT admitted (they grant nothing).
+        const forged = await fetch(`${serveUrl}/echo`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...FORGED_SERVE_MARKERS },
+          body: JSON.stringify({ message: 'hi' }),
+        });
+        expect(forged.status, `forged markers must not be admitted; stderr:\n${stderr}`).toBe(401);
       } finally {
         await terminate(child);
         rmSync(home, { recursive: true, force: true });

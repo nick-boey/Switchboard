@@ -112,7 +112,7 @@
 
 ## 8. CLI: packaged-CLI smoke test extension (build the cli first)
 
-- [ ] 8.1 Extend `apps/cli/src/cli.smoke.test.ts` to also assert `/health` **on the dedicated serve
+- [x] 8.1 Extend `apps/cli/src/cli.smoke.test.ts` to also assert `/health` **on the dedicated serve
       ingress**: start the **built** bin with a listen spec that includes a serve port (a second
       loopback-TCP port) and `fetch`/request `/health` on it → `200`, alongside the existing
       `--version` and loopback `/health` cases. The smoke test runs on the **host**, so the serve port
