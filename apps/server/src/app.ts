@@ -8,19 +8,26 @@ import {
   isValidRepoId,
   isValidWorktreeId,
   parseRepoTarget,
+  sessionLaunchRequestSchema,
+  sessionStopRequestSchema,
   toRepoId,
   worktreeCreateRequestSchema,
   worktreeDeleteRequestSchema,
   type RepoListResponse,
   type RuntimeContext,
   type RuntimeIdentity,
+  type SessionListResponse,
 } from '@switchboard/shared';
 import { authMiddleware, corsMiddleware } from './auth.js';
 import { telemetryMiddleware } from './telemetry.js';
 import { createCloneOrchestrator, type CloneOrchestrator } from './repos/index.js';
 import { createWorktreeOrchestrator, type WorktreeOrchestrator } from './worktrees/orchestrator.js';
+import { createWorktreeService } from './worktrees/git-worktree.js';
 import { WorktreeError, WorktreeNotSafeError } from './worktrees/errors.js';
 import { listGitHubRepos } from './github/index.js';
+import { createSessionOrchestrator, type SessionOrchestrator } from './sessions/orchestrator.js';
+import { createSessionProbe } from './sessions/session-probe.js';
+import { createTmuxRunner, type TmuxRunner } from './sessions/tmux-runner.js';
 
 /** Injected slice dependencies (tests supply fakes; `start`/`createApp` build real ones). */
 export interface RepoDeps {
@@ -33,11 +40,49 @@ export interface WorktreeDeps {
   orchestrator?: WorktreeOrchestrator;
 }
 
+/** Injected session-slice dependencies (tests inject a fake tmux boundary or a whole orchestrator). */
+export interface SessionDeps {
+  orchestrator?: SessionOrchestrator;
+  /** The tmux seam — E2E/tests inject a fake so no real `claude` login is needed. */
+  tmuxRunner?: TmuxRunner;
+}
+
 /** Optional wiring for `createApp` — tests inject a tracer; `start` supplies one from config. */
 export interface CreateAppOptions {
   tracer?: Tracer;
   repos?: RepoDeps;
   worktrees?: WorktreeDeps;
+  sessions?: SessionDeps;
+}
+
+/**
+ * Cycle-free slice-orchestrator construction (design Decision 4). Build `tmuxRunner` → the
+ * tmux-only `sessionProbe` → ONE shared worktree service, then pass the probe to the **worktree**
+ * orchestrator (replacing its `noSessionProbe` default) and the `tmuxRunner` to the **session**
+ * orchestrator. The probe has no worktree back-edge, so there is no orchestrator-to-orchestrator
+ * import and no cycle. The seam pieces are built only when an orchestrator is not injected.
+ */
+export function buildOrchestrators(
+  ctx: RuntimeContext,
+  options: CreateAppOptions = {},
+): {
+  repos: CloneOrchestrator;
+  worktrees: WorktreeOrchestrator;
+  sessions: SessionOrchestrator;
+  listGitHub: () => Promise<RepoListResponse>;
+} {
+  const repos = options.repos?.orchestrator ?? createCloneOrchestrator(ctx);
+  const listGitHub = options.repos?.listGitHub ?? (() => listGitHubRepos(ctx));
+  let worktrees = options.worktrees?.orchestrator;
+  let sessions = options.sessions?.orchestrator;
+  if (!worktrees || !sessions) {
+    const tmuxRunner = options.sessions?.tmuxRunner ?? createTmuxRunner();
+    const sessionProbe = createSessionProbe(tmuxRunner);
+    const worktreeService = createWorktreeService(ctx);
+    worktrees ??= createWorktreeOrchestrator(ctx, { worktreeService, sessionProbe });
+    sessions ??= createSessionOrchestrator(ctx, { worktreeService, tmuxRunner });
+  }
+  return { repos, worktrees, sessions, listGitHub };
 }
 
 /** Hono environment: the auth gate publishes the admitted identity for handlers. */
@@ -67,6 +112,18 @@ const worktreeStatusParamSchema = z
     message: 'invalid worktree id',
   });
 
+/** Session-list param: a safe `<owner>/<repo>` repo-id. */
+const sessionListParamSchema = z
+  .object({ owner: z.string(), repo: z.string() })
+  .refine((v) => isValidRepoId(`${v.owner}/${v.repo}`), { message: 'invalid repo-id' });
+
+/** Launch-status param: a safe `<owner>/<repo>` repo-id + a path-safe `<wt-id>`. */
+const sessionStatusParamSchema = z
+  .object({ owner: z.string(), repo: z.string(), wtId: z.string() })
+  .refine((v) => isValidRepoId(`${v.owner}/${v.repo}`) && isValidWorktreeId(v.wtId), {
+    message: 'invalid worktree id',
+  });
+
 /** Shared Zod-validation failure handler — reject with `422` BEFORE the handler runs. */
 function onInvalid(
   result: { success: boolean; error?: { issues: unknown } },
@@ -89,9 +146,7 @@ function onInvalid(
 export function createApp(ctx: RuntimeContext, options: CreateAppOptions = {}) {
   const app = new Hono<AppEnv>();
 
-  const orchestrator = options.repos?.orchestrator ?? createCloneOrchestrator(ctx);
-  const worktrees = options.worktrees?.orchestrator ?? createWorktreeOrchestrator(ctx);
-  const listGitHub = options.repos?.listGitHub ?? (() => listGitHubRepos(ctx));
+  const { repos: orchestrator, worktrees, sessions, listGitHub } = buildOrchestrators(ctx, options);
 
   // OTel instrumentation (design Decision 5): one semconv span per request. The redacting
   // processor scrubs secrets before export.
@@ -201,6 +256,47 @@ export function createApp(ctx: RuntimeContext, options: CreateAppOptions = {}) {
         const { owner, repo, wtId } = c.req.valid('param');
         const repoId = toRepoId({ owner, repo });
         const status = await worktrees.getStatus(repoId, wtId);
+        if (status) return c.json(status, 200);
+        return c.json({ error: 'not-found' as const, repoId, wtId }, 404);
+      },
+    )
+    // Launch a Claude session for a worktree as a tracked op; returns the launch status (starting).
+    .post(
+      '/sessions/launch',
+      zValidator('json', sessionLaunchRequestSchema, onInvalid),
+      async (c) => {
+        const { repoId, wtId } = c.req.valid('json');
+        const status = await sessions.launchSession(repoId, wtId);
+        return c.json(status, 200);
+      },
+    )
+    // Stop a session (kill its tmux session); idempotent — an absent session is a no-op success.
+    .post('/sessions/stop', zValidator('json', sessionStopRequestSchema, onInvalid), async (c) => {
+      const { repoId, wtId } = c.req.valid('json');
+      await sessions.stopSession(repoId, wtId);
+      return c.json({ status: 'stopped' as const }, 200);
+    })
+    // List a repository's live sessions (existence + worktree mapping only).
+    .get(
+      '/sessions/:owner/:repo',
+      zValidator('param', sessionListParamSchema, onInvalid),
+      async (c) => {
+        const { owner, repo } = c.req.valid('param');
+        const response: SessionListResponse = {
+          repoId: toRepoId({ owner, repo }),
+          sessions: await sessions.listSessions({ owner, repo }),
+        };
+        return c.json(response, 200);
+      },
+    )
+    // The session launch operation status (the starting/error poll target).
+    .get(
+      '/sessions/:owner/:repo/:wtId/status',
+      zValidator('param', sessionStatusParamSchema, onInvalid),
+      async (c) => {
+        const { owner, repo, wtId } = c.req.valid('param');
+        const repoId = toRepoId({ owner, repo });
+        const status = await sessions.getLaunchStatus(repoId, wtId);
         if (status) return c.json(status, 200);
         return c.json({ error: 'not-found' as const, repoId, wtId }, 404);
       },

@@ -1,11 +1,8 @@
 import { serve, type ServerType } from '@hono/node-server';
 import type { AddressInfo } from 'node:net';
 import type { RuntimeContext, ServerHandle } from '@switchboard/shared';
-import { createApp, type CreateAppOptions } from './app.js';
+import { buildOrchestrators, createApp, type CreateAppOptions } from './app.js';
 import { createTelemetry } from './telemetry.js';
-import { createCloneOrchestrator } from './repos/index.js';
-import { createWorktreeOrchestrator } from './worktrees/orchestrator.js';
-import { listGitHubRepos } from './github/index.js';
 
 /** Loopback-only bind (design Decision 3): `tailscale serve` is the exclusive ingress. */
 const LOOPBACK_HOST = '127.0.0.1';
@@ -26,15 +23,18 @@ export async function start(
   options: CreateAppOptions = {},
 ): Promise<ServerHandle> {
   const telemetry = createTelemetry(ctx.config);
-  const orchestrator = options.repos?.orchestrator ?? createCloneOrchestrator(ctx);
-  const worktrees = options.worktrees?.orchestrator ?? createWorktreeOrchestrator(ctx);
-  // Restart recovery for both orchestrators (each reconciles only the records it owns).
-  await orchestrator.reconcile();
+  // Build the slices once (cycle-free: tmux → probe → shared worktree service → both orchestrators)
+  // so restart recovery can run before serving, then hand the SAME instances to `createApp`.
+  const { repos, worktrees, sessions, listGitHub } = buildOrchestrators(ctx, options);
+  // Restart recovery for each orchestrator (each reconciles only the records it owns).
+  await repos.reconcile();
   await worktrees.reconcile();
+  await sessions.reconcile();
   const app = createApp(ctx, {
     tracer: telemetry.tracer,
-    repos: { orchestrator, listGitHub: options.repos?.listGitHub ?? (() => listGitHubRepos(ctx)) },
+    repos: { orchestrator: repos, listGitHub },
     worktrees: { orchestrator: worktrees },
+    sessions: { orchestrator: sessions },
   });
 
   const server = await new Promise<ServerType>((resolve) => {

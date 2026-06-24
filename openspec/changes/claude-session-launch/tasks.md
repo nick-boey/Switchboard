@@ -72,12 +72,12 @@
 
 ## 6. Server: fulfil the worktree-management session-liveness seam (cross-change wiring)
 
-- [ ] 6.1 (red) Write the failing test proving the seam fulfilment against the **worktree**
+- [x] 6.1 (red) Write the failing test proving the seam fulfilment against the **worktree**
       orchestrator: with the real tmux-backed `SessionProbe` injected
       (`createWorktreeOrchestrator(ctx, { sessionProbe })`), a worktree whose session is live reports
       `hasActiveSession = true`, so the safe-to-delete predicate treats it as **not idle** and a
       non-force delete is refused; a worktree with no session still reports no active session.
-- [ ] 6.2 (green) In `apps/server/src/app.ts`, build the `tmuxRunner` → the tmux-only `sessionProbe`
+- [x] 6.2 (green) In `apps/server/src/app.ts`, build the `tmuxRunner` → the tmux-only `sessionProbe`
       → pass the probe to **both** the worktree orchestrator (replacing the `noSessionProbe` default)
       and the session orchestrator, with no orchestrator-to-orchestrator import (construction order
       avoids a cycle).
