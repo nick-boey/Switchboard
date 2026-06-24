@@ -19,10 +19,13 @@ Fills out the `Switchboard.Cli` container: it owns lifecycle/orchestration — c
 bootstrap into `~/.switchboard`, spawn + supervise the server's programmatic `start(ctx)`,
 and a `--docker` mode — distributed via **npm** (`npx switchboard` / `npm i -g`). It is not
 the server; it imports `start(ctx)`. The Docker path brings up `tailscaled` + `tailscale
-serve` in front of the loopback-bound API. This change also lands the **deferred identity
-hardening**: a **Unix-domain-socket serve ingress** so identity trust rests on serve-exclusive
-ingress rather than on header markers (per the locked Auth decision). A packaged-CLI smoke
-test exercises the shipped path, not just dev imports.
+serve`, which proxies **only** to a dedicated, non-host-published loopback-TCP serve ingress
+(no API port published to the host). This change also lands the **deferred identity
+hardening**: a **dedicated serve ingress** so identity trust rests on a serve-exclusive ingress
+(set at bind time; container network isolation) rather than on header markers (per the locked
+Auth decision — see `design.md` Decision 3 for why the literal UDS wording is realised as a
+loopback-TCP serve port). A packaged-CLI smoke test exercises the shipped path, not just dev
+imports.
 
 ## Plan page
 
@@ -32,7 +35,8 @@ test exercises the shipped path, not just dev imports.
 ## Planned architecture
 
 **Architectural impact: yes.** Activates `Switchboard.Cli`'s orchestration role and the
-`Tailscale -> Switchboard.Api` serve ingress as a deployable reality (Docker + UDS serve).
+`Tailscale -> Switchboard.Api` serve ingress as a deployable reality (Docker + `tailscale serve`
+→ a dedicated loopback serve port).
 The LikeC4 overlay `docs/dev/Architecture/Planned/runtime-cli-docker.c4` (extending
 `Switchboard.Cli` and the Tailscale ingress, view ids prefixed `runtime-cli-docker-*`) is
 **authored during this change's full planning stage** — deferred here as a roadmap scaffold.
@@ -42,7 +46,8 @@ The Architecture review checkpoint fires when that overlay lands.
 
 Inherited from the programme page and spike 0: **TypeScript** CLI, thin `apps/cli` package,
 **npm** distribution, imports server `start(ctx)`; **single-user MVP, container-per-user**
-deferred; **UDS serve ingress** as the identity-boundary hardening; config in `~/.switchboard`
+deferred; a **dedicated serve ingress** (non-host-published loopback-TCP port) as the
+identity-boundary hardening; config in `~/.switchboard`
 with `600` perms; container secret mounting for the PAT and Claude credentials.
 
 ## Open questions

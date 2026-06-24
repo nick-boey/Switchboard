@@ -16,6 +16,7 @@ transitively covers `worktree-management`, `repo-clone-browse`, and `ui-prototyp
 > `foundations`), relax this edge — it is a sequencing choice, not a code dependency.
 
 **Capability overlap:** `cli-runtime` / `container-runtime` are new. This change **modifies**
-the existing `api-auth-gate` (serve-exclusive ingress → UDS) and `app-runtime` (config
+the existing `api-auth-gate` (serve-exclusive ingress → a dedicated loopback serve port) and
+`app-runtime` (config
 bootstrap / supervised lifecycle) capabilities; no other active change touches those, so
 there is no contended delta. The programme page is the shared arbiter.
