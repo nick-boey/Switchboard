@@ -16,4 +16,11 @@ views {
 
     include *
   }
+
+  // API components contributed by repo-clone-browse (graduated from its Planned overlay).
+  view repo-clone-browse-api of Switchboard.Api {
+    title 'repo-clone-browse — API components'
+
+    include *
+  }
 }

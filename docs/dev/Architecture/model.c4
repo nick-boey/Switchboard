@@ -19,6 +19,35 @@ model {
     Api = container 'API Server' {
       description 'Hono server exposed programmatically via start(ctx: RuntimeContext). Loopback-bound behind a reject-by-default auth gate (Tailscale identity + bearer fallback), with /health and OpenTelemetry redaction.'
       technology 'Hono, Zod, OpenTelemetry'
+
+      // Components built by repo-clone-browse (graduated from Planned/repo-clone-browse.c4).
+      githubService = component 'GitHub Service' {
+        description 'Lists the authenticated account, organisations, and accessible repositories via PAT-authenticated GitHub REST, behind an OAuth-ready provider interface. Maps failures to typed errors without leaking GitHub error bodies.'
+        technology 'fetch, Zod'
+      }
+
+      gitService = component 'Git Service' {
+        description 'Bare-clones a validated <owner>/<repo> to ~/.switchboard/repos/<owner>/<repo>/.bare via the git CLI (plain HTTPS URL, no embedded credentials) and lists completed clones from disk.'
+        technology 'git CLI, child_process'
+      }
+
+      operationLedger = component 'Operation Ledger + Lock' {
+        description 'Filesystem-backed operation records + per-key lock under ~/.switchboard: idempotency, serialization, abort/cancellation as a single terminal transition, and restart recovery. Reused by later long-running work.'
+        technology 'Node fs'
+      }
+
+      credentialHelper = component 'Credential Helper' {
+        description "Supplies the PAT to git over the credential protocol from a 600-mode token file in ~/.switchboard, wired per-invocation with host-scoped -c so it is never persisted into the cloned bare config."
+        technology 'git credential protocol'
+      }
+
+      // Internal wiring (component-level).
+      gitService -> operationLedger 'Runs each clone as a tracked operation'
+      gitService -> credentialHelper 'Obtains the PAT over the git credential protocol'
+
+      // Realises the base model's #planned `Switchboard.Api -> GitHub` at the component level.
+      githubService -> GitHub 'Lists repositories and organisations (PAT-authenticated REST)'
+      gitService -> GitHub 'Bare-clones the chosen repository over HTTPS'
     }
 
     Cli = container 'CLI' {
