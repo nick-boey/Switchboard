@@ -36,7 +36,12 @@ The CLI SHALL supervise the server it starts: a SIGINT/SIGTERM SHALL trigger a g
 `handle.close()` (releasing every ingress listener) and then exit **without
 restarting**, while an **unexpected** server failure (a rejected `start(ctx)` or a handle that closes
 without a signal) SHALL be restarted with **bounded exponential backoff** up to a give-up ceiling,
-after which the CLI exits non-zero so the fault is surfaced rather than crash-looping silently.
+after which the CLI exits non-zero so the fault is surfaced rather than crash-looping silently. On
+that unexpected-failure path the supervisor SHALL `close()` the crashed handle (releasing EVERY
+ingress listener) BEFORE backing off and rebinding — because a handle is a dual-listener handle whose
+crash signal can fire when only ONE listener has closed, a restart must begin from a fully released
+listener set so the surviving listener cannot leak (and the rebind cannot fail `EADDRINUSE`). A
+close() error on this path SHALL be swallowed/logged so it cannot wedge the restart loop.
 
 #### Scenario: Signal-driven shutdown does not restart
 
@@ -47,6 +52,13 @@ after which the CLI exits non-zero so the fault is surfaced rather than crash-lo
 
 - **WHEN** the server fails unexpectedly (not via a signal)
 - **THEN** the supervisor restarts it after a bounded backoff delay, up to the give-up ceiling
+
+#### Scenario: A single-listener crash releases every listener before rebinding
+
+- **WHEN** a dual-listener handle's crash signal fires because ONE listener closed while the OTHER is
+  still bound
+- **THEN** the supervisor closes the crashed handle (releasing EVERY listener) before the next start
+  rebinds, so the surviving listener does not leak and the rebind does not fail `EADDRINUSE`
 
 #### Scenario: Repeated rapid failures give up non-zero
 
@@ -86,6 +98,16 @@ paired with a serve ingress.
 - **THEN** it asserts the installed Tailscale version is at least v1.50.0 and runs exactly `tailscale
   serve --bg --https=443 http://127.0.0.1:<servePort>` (the pinned argv), not a best-effort fallback
   chain
+
+#### Scenario: A rotated env auth key overrides a stale persisted secret file
+
+- **WHEN** `--docker` mode resolves the Tailscale auth key and a raw env key (`TS_AUTHKEY` /
+  `TAILSCALE_AUTHKEY`) is set while a default secret file from an earlier (rotated-out) key persists
+  on the mounted `/root/.switchboard` volume
+- **THEN** the CLI materialises the CURRENT env value to the default secret file by an atomic,
+  mode-`600` rewrite and `tailscale up` reads that current value by file reference — so a rotated key
+  recovers across restarts rather than the runtime re-using the revoked persisted key (an explicit
+  `TS_AUTHKEY_FILE` path still takes precedence and is used as-is; the raw key never enters argv)
 
 #### Scenario: Shutdown signals are forwarded to tailscaled
 

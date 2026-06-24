@@ -134,8 +134,21 @@ export async function superviseServer(options: SuperviseOptions): Promise<number
       return 0;
     }
 
-    // Unexpected stop. A run that stayed up long enough was healthy — reset the streak first.
+    // Unexpected stop. A run that stayed up long enough was healthy — reset the streak first
+    // (measured BEFORE the close below, so a slow teardown can't shrink the stability window).
     if (now() - startedAt >= policy.stableAfterMs) consecutiveFailures = 0;
+
+    // The handle is a DUAL-listener handle whose `whenClosed` fires when ANY ONE listener closes —
+    // the OTHER may still be bound. Close the crashed handle (best-effort) BEFORE backing off and
+    // rebinding so EVERY listener is released; a restart must start from a fully released listener
+    // set, or the survivor leaks and the next bind hits EADDRINUSE. A close() error here is itself
+    // part of the crash — log it and proceed with the restart rather than getting stuck.
+    try {
+      await handle.close();
+    } catch (err) {
+      logger.warn('error closing crashed server handle before restart', { error: String(err) });
+    }
+
     consecutiveFailures += 1;
     logger.warn('server stopped unexpectedly, will restart', { attempt: consecutiveFailures });
     if (consecutiveFailures > policy.giveUpAfter) {

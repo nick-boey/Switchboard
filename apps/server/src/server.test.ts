@@ -144,6 +144,19 @@ describe('start(ctx) dedicated serve ingress (runtime-cli-docker Decision 2)', (
       await expect(fetch(`${url}/health`, { signal: AbortSignal.timeout(500) })).rejects.toThrow();
     }
   });
+
+  it('close() tolerates an already-released listener and still resolves (crash-restart path)', async () => {
+    // On the supervisor's crash-restart path a DUAL-listener handle's `whenClosed` fires when ONE
+    // listener has already closed itself; the supervisor then calls `close()` to release the rest.
+    // `close()` must tear every listener down and RESOLVE (not reject) even though a listener is
+    // already gone — otherwise the supervisor sees a rejected teardown. Closing twice exercises that
+    // already-closed path on every listener.
+    const h = await start(dualIngressContext());
+    await h.close();
+    handle = undefined;
+
+    await expect(h.close()).resolves.toBeUndefined();
+  });
 });
 
 describe('start(ctx) partial dual-listener bind cleanup (impl review)', () => {

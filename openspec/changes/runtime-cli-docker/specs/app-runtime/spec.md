@@ -8,7 +8,10 @@ expose the health endpoint on every configured ingress and shut down gracefully 
 handle, releasing every listener. Both ingresses SHALL bind loopback only. When binding multiple
 ingresses, a bind failure on any listener SHALL close every listener already opened in that
 `start(ctx)` call before the error propagates — a partial bind SHALL NOT leak an un-closable
-listener (which would otherwise wedge the supervisor's restart loop). The dedicated serve ingress
+listener (which would otherwise wedge the supervisor's restart loop). `close()` SHALL release every
+listener and resolve even when a listener has ALREADY closed itself (e.g. a single-listener crash on
+the supervisor's restart path), so the surviving listeners are still torn down and the teardown does
+not reject. The dedicated serve ingress
 SHALL be a separate listener whose identity-trust eligibility is fixed at bind time (per the auth
 gate) and which is intended to be reached only via `tailscale serve` and not published to the host. The
 serve ingress SHALL be identity-eligible only when the runtime asserts it is not host-published (the
@@ -35,6 +38,13 @@ container runtime); otherwise it SHALL be bound bearer-only.
 
 - **WHEN** `close()` is called on the returned handle
 - **THEN** the server stops accepting connections on every ingress and releases every listener's port
+
+#### Scenario: close() tolerates an already-released listener
+
+- **WHEN** `close()` is called on a multi-ingress handle in which one listener has already closed
+  itself (a single-listener crash on the supervisor's restart path)
+- **THEN** `close()` releases the surviving listener(s) and resolves successfully rather than
+  rejecting on the already-closed listener — every listener ends up released
 
 #### Scenario: A partial multi-ingress bind leaks no listener
 

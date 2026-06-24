@@ -112,7 +112,11 @@ Notes:
 Mounted, never baked into the image and never logged:
 
 - **Tailscale auth key** — `TS_AUTHKEY` (env / `--env-file`), or a file at
-  `/root/.switchboard/secrets/tailscale-authkey`.
+  `/root/.switchboard/secrets/tailscale-authkey`. Precedence: an explicit `TS_AUTHKEY_FILE` path
+  wins; otherwise a raw `TS_AUTHKEY` / `TAILSCALE_AUTHKEY` value is materialised to the default
+  secret file (atomic, mode `600`) and takes precedence over any stale persisted file — so rotating
+  the env key recovers cleanly across restarts of the persistent config volume; otherwise the
+  existing secret file is used.
 - **GitHub PAT** — set `github.token` (a fine-grained PAT) in `/root/.switchboard/config.json`
   (mode `600`).
 

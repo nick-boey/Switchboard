@@ -1,5 +1,3 @@
-import { chmodSync, existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type {
   AppConfig,
   RuntimeContext,
@@ -9,6 +7,7 @@ import type {
 } from '@switchboard/shared';
 import { start } from '@switchboard/server';
 import { bootstrap } from './bootstrap.js';
+import { resolveAuthKeyFile } from './authkey.js';
 import { superviseServer } from './supervisor.js';
 import { createRuntimeRunner } from './runtime-runner.js';
 import { DEFAULT_SERVE_PORT, runDockerBringUp } from './docker.js';
@@ -122,36 +121,6 @@ async function runDocker(): Promise<number> {
     authKeyFile: resolveAuthKeyFile(configDir),
     onListening: announceListening,
   });
-}
-
-/**
- * Resolve the PATH to the mounted Tailscale auth-key secret. `--docker` passes this to
- * `tailscale up` via the `--auth-key=file:<path>` form, so the key VALUE never enters argv or logs.
- * Precedence:
- *   1. `TS_AUTHKEY_FILE` — an explicit mounted-secret path (the conventional `*_FILE` form);
- *   2. the default `secrets/tailscale-authkey` under the config dir, when present;
- *   3. a raw `TS_AUTHKEY` / `TAILSCALE_AUTHKEY` value materialised to that default file at mode
- *      `600` — so an env-supplied key is still handed to `tailscale up` by file reference, never
- *      inlined into argv.
- */
-function resolveAuthKeyFile(configDir: string): string {
-  const explicit = process.env.TS_AUTHKEY_FILE;
-  if (explicit && explicit.trim().length > 0) return explicit.trim();
-
-  const defaultPath = join(configDir, 'secrets', 'tailscale-authkey');
-  if (existsSync(defaultPath)) return defaultPath;
-
-  const fromEnv = process.env.TS_AUTHKEY ?? process.env.TAILSCALE_AUTHKEY;
-  if (fromEnv && fromEnv.trim().length > 0) {
-    writeFileSync(defaultPath, `${fromEnv.trim()}\n`, { mode: 0o600 });
-    chmodSync(defaultPath, 0o600); // enforce 600 even if a permissive umask widened the create mode
-    return defaultPath;
-  }
-
-  throw new Error(
-    'no Tailscale auth key found: set TS_AUTHKEY_FILE to the mounted secret path, place the key in ' +
-      'secrets/tailscale-authkey under the config dir, or set TS_AUTHKEY (a mounted-secret value)',
-  );
 }
 
 /**

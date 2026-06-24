@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RuntimeLogger } from '@switchboard/shared';
+import type { RuntimeLogger, ServerHandle } from '@switchboard/shared';
 import { superviseServer } from './supervisor';
 import { fakeServerStarter } from './testing/server-starter';
 
@@ -80,6 +80,62 @@ describe('superviseServer', () => {
     ac.abort();
     expect(await exit).toBe(0);
     expect(fake.startCalls).toBe(2); // one failed start + one successful restart
+  });
+
+  it('a single-listener crash closes the crashed handle (releasing EVERY listener) before rebinding', async () => {
+    // Model the real DUAL-listener handle: its `whenClosed` fires when ANY ONE listener closes — so
+    // here the serve listener dies on its own (a crash) while the direct listener stays BOUND. The
+    // supervisor must close the crashed handle so EVERY listener is released BEFORE the next start
+    // rebinds; otherwise the surviving listener leaks and the rebind would hit EADDRINUSE.
+    const events: string[] = [];
+    const handles: { direct: boolean; serve: boolean }[] = [];
+    let settleFirstCrash!: () => void;
+
+    const start = (): Promise<ServerHandle> => {
+      const index = handles.length;
+      const listeners = { direct: true, serve: true }; // both listeners bound on (re)start
+      handles.push(listeners);
+      events.push(`start-${index}`);
+      // The first run crashes (one listener); the restart stays up (its `whenClosed` never settles).
+      const whenClosed =
+        index === 0
+          ? new Promise<void>((resolve) => {
+              settleFirstCrash = resolve;
+            })
+          : new Promise<void>(() => {});
+      return Promise.resolve({
+        url: 'http://127.0.0.1:0',
+        urls: {},
+        whenClosed,
+        close: () => {
+          events.push(`close-${index}`);
+          listeners.direct = false; // close() releases EVERY listener, including the survivor
+          listeners.serve = false;
+          return Promise.resolve();
+        },
+      });
+    };
+
+    const ac = new AbortController();
+    const exit = superviseServer({
+      start,
+      shutdownSignal: ac.signal,
+      logger: silentLogger,
+      sleep: async () => {},
+    });
+
+    await waitFor(() => handles.length === 1);
+    handles[0].serve = false; // ONE listener (serve) crashed; `direct` is still bound
+    settleFirstCrash();
+
+    // The supervisor restarts — but only AFTER closing the crashed handle (releasing BOTH listeners).
+    await waitFor(() => handles.length === 2);
+    expect(events).toContain('close-0'); // the crashed handle was closed
+    expect(handles[0]).toEqual({ direct: false, serve: false }); // EVERY listener released, no leak
+    expect(events.indexOf('close-0')).toBeLessThan(events.indexOf('start-1')); // closed before rebind
+
+    ac.abort();
+    expect(await exit).toBe(0);
   });
 
   it('repeated rapid failures past the give-up ceiling stop restarting and exit non-zero', async () => {

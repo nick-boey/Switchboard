@@ -125,11 +125,20 @@ export async function start(
     close: () =>
       new Promise<void>((resolve, reject) => {
         intentionalClose = true;
-        // Release every listener's port, then flush + shut down telemetry once.
+        // Release EVERY listener's port, then flush + shut down telemetry once. A listener that has
+        // ALREADY closed itself (a single-listener crash on the supervisor's restart path) is already
+        // released — Node reports that as `ERR_SERVER_NOT_RUNNING`, which we treat as success so
+        // `close()` still tears the surviving listeners down and resolves rather than rejecting.
         Promise.all(
           listeners.map(
             (server) =>
-              new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res()))),
+              new Promise<void>((res, rej) =>
+                server.close((err) =>
+                  err && (err as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING'
+                    ? rej(err)
+                    : res(),
+                ),
+              ),
           ),
         ).then(
           () => void telemetry.shutdown().finally(resolve),
