@@ -1,4 +1,3 @@
-import { loadConfig } from '@switchboard/shared/node';
 import type {
   RuntimeContext,
   RuntimeLogger,
@@ -6,6 +5,7 @@ import type {
   ServerHandle,
 } from '@switchboard/shared';
 import { start } from '@switchboard/server';
+import { bootstrap } from './bootstrap.js';
 
 /**
  * `switchboard` CLI — the thin shell (design Decision 8).
@@ -47,22 +47,40 @@ const telemetry: RuntimeTelemetry = {
   startSpan: () => ({ end: () => undefined }),
 };
 
-/** Run the local server: parse config (Decision 6), build the context, then `start(ctx)`. */
+/**
+ * Run the local server: bootstrap config (`runtime-cli-docker` Decision 4), build the context, then
+ * `start(ctx)`. A host `start` (no `--docker`) does NOT assert container isolation, so any serve
+ * ingress it binds is bearer-only and a `trustServeIdentity` + serve-ingress pairing is rejected at
+ * bootstrap before any listener binds.
+ */
 async function runStart(): Promise<void> {
-  const config = loadConfig();
+  const { config, assertNoHostPublication } = bootstrap();
   const ctx: RuntimeContext = {
     workspaceRoot: process.cwd(),
     config,
     logger,
     telemetry,
     identity: { login: null, source: 'none' },
+    assertNoHostPublication,
   };
 
   const handle = await start(ctx);
-  // stdout carries the single machine-readable fact callers parse: the bound loopback URL.
-  process.stdout.write(`Switchboard listening on ${handle.url}\n`);
+  announceListening(handle);
 
   await waitForShutdown(handle);
+}
+
+/**
+ * stdout carries the machine-readable facts callers parse: the bound loopback URL of each ingress,
+ * tagged so a consumer (e.g. the packaged-CLI smoke test) can address the direct vs serve port.
+ */
+function announceListening(handle: ServerHandle): void {
+  if (handle.urls.direct) {
+    process.stdout.write(`Switchboard listening (direct) on ${handle.urls.direct}\n`);
+  }
+  if (handle.urls.serve) {
+    process.stdout.write(`Switchboard listening (serve) on ${handle.urls.serve}\n`);
+  }
 }
 
 /** Block until SIGINT/SIGTERM, then gracefully `close()` the handle and release the port. */

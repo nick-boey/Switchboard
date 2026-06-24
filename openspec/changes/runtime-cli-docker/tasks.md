@@ -66,20 +66,20 @@
 
 ## 5. CLI: config bootstrap (apps/cli)
 
-- [ ] 5.1 (red) Write `apps/cli/src/bootstrap.test.ts` (pointing config at a temp dir): bootstrap
+- [x] 5.1 (red) Write `apps/cli/src/bootstrap.test.ts` (pointing config at a temp dir): bootstrap
       provisions `~/.switchboard` on first run — `config.json` at `600`, the run/secrets dirs at `700`;
       it is **idempotent** over an existing valid config (bearer token intact, only missing pieces
       created); an invalid config refuses with a field-named error.
-- [ ] 5.2 (green) Implement the bootstrap module in `apps/cli/src/` (wrapping `loadConfig()` from
+- [x] 5.2 (green) Implement the bootstrap module in `apps/cli/src/` (wrapping `loadConfig()` from
       `@switchboard/shared/node` and provisioning the run/secrets dirs with secure perms); route
       `switchboard start` through it before serving.
-- [ ] 5.3 (red) Extend `apps/cli/src/bootstrap.test.ts` with the **unsafe-combo rejection**: a config
+- [x] 5.3 (red) Extend `apps/cli/src/bootstrap.test.ts` with the **unsafe-combo rejection**: a config
       that enables `trustServeIdentity` **together with** a serve ingress is **rejected** at bootstrap
       with a **field-named** error when the runtime does **not** assert no host publication (host /
       non-`--docker`); the **same** config is **accepted** when the runtime asserts container isolation
       (`--docker`); a serve ingress **without** `trustServeIdentity` is accepted on the host
       (bearer-only).
-- [ ] 5.4 (green) Implement the **mode-aware cross-field validation** in the bootstrap module
+- [x] 5.4 (green) Implement the **mode-aware cross-field validation** in the bootstrap module
       (Decision 3/4): reject `trustServeIdentity` + serve ingress unless the runtime asserts no host
       publication, failing fast with a clear, field-named error before any listener binds; pass the
       runtime's no-host-publication assertion through to `start(ctx)` so the serve ingress is bound
