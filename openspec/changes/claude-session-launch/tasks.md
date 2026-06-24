@@ -160,7 +160,7 @@
 
 ## 12. Planned-architecture overlay (docs-migration `author →` row)
 
-- [ ] 12.1 Author `docs/dev/Architecture/Planned/claude-session-launch.c4`: `extend`
+- [x] 12.1 Author `docs/dev/Architecture/Planned/claude-session-launch.c4`: `extend`
       `Switchboard.Api` with the **Session service** (session launch/stop/list, the `session`-typed
       operation-ledger usage, and the tmux-backed liveness probe wired into the worktree slice's
       safe-to-delete seam) and realize the `Switchboard.Api -> TmuxHost` relationship; tag every

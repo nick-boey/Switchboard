@@ -37,6 +37,16 @@ ids prefixed `claude-session-launch-*`) is **authored during this change's full 
 stage** — deferred here as a roadmap scaffold. The Architecture review checkpoint fires when
 that overlay lands.
 
+**Added by the overlay (`docs/dev/Architecture/Planned/claude-session-launch.c4`, all `#todo`):**
+
+- Elements (components of `Switchboard.Api`): `sessionService`, `sessionProbe`.
+- Relationships: `sessionService -> operationLedger`, `sessionService -> worktreeService`,
+  `sessionService -> sessionProbe`, `worktreeService -> sessionProbe` (the safe-to-delete
+  `hasActiveSession` seam — the only worktree→session edge, pointing at the back-edge-free probe),
+  `sessionService -> TmuxHost` and `sessionProbe -> TmuxHost` (realizing the base `#planned`
+  `Switchboard.Api -> TmuxHost`).
+- View id: `claude-session-launch-api`.
+
 ## Decisions
 
 Inherited from the programme page: launch `claude --remote-control` **detached in tmux**;
