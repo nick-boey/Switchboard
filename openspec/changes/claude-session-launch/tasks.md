@@ -24,11 +24,11 @@
 
 ## 3. Server: TmuxRunner subprocess seam (apps/server)
 
-- [ ] 3.1 (red) Write `apps/server/src/sessions/tmux-runner.test.ts` against an injectable spawn:
+- [x] 3.1 (red) Write `apps/server/src/sessions/tmux-runner.test.ts` against an injectable spawn:
       the system runner constructs `tmux new-session -d -s <name> -c <worktreePath> -- claude
       --remote-control` as **argv** (no shell), and `hasSession`/`listSessions`/`killSession` map to
       the right `tmux` invocations.
-- [ ] 3.2 (green) Implement `apps/server/src/sessions/tmux-runner.ts`: the `TmuxRunner` interface +
+- [x] 3.2 (green) Implement `apps/server/src/sessions/tmux-runner.ts`: the `TmuxRunner` interface +
       system implementation (spawn `tmux` via `child_process`, discard stderr without logging),
       mirroring `repos/git-runner.ts`.
 
