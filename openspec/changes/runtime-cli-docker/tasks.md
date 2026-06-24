@@ -99,13 +99,13 @@
 
 ## 7. CLI: `--docker` mode bring-up (apps/cli)
 
-- [ ] 7.1 (red) Write `apps/cli/src/docker.test.ts` (using the 1.3 runner fake): `start --docker`
+- [x] 7.1 (red) Write `apps/cli/src/docker.test.ts` (using the 1.3 runner fake): `start --docker`
       invokes, **in order**, `tailscaled` (userspace) → `tailscale up` (mounted auth key) → `start(ctx)`
       on the **dedicated serve ingress** → `tailscale serve` with the **pinned argv** `--bg
       --https=443 http://127.0.0.1:<servePort>`; assert the bring-up **checks the Tailscale version**
       and refuses when below the pinned minimum (**v1.50.0**); a shutdown signal is **forwarded to
       `tailscaled`**; both `tailscaled` and the server are supervised.
-- [ ] 7.2 (green) Implement the docker-orchestration module in `apps/cli/src/` (the in-container
+- [x] 7.2 (green) Implement the docker-orchestration module in `apps/cli/src/` (the in-container
       supervisor; the pinned `tailscale serve --bg --https=443 http://127.0.0.1:<servePort>`
       invocation gated on a **>= v1.50.0** version assertion), dispatched when `start --docker` is
       given; reuse the 6.2 supervisor for the server and supervise `tailscaled` as a child.

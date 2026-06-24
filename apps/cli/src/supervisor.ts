@@ -49,8 +49,14 @@ export interface SuperviseOptions {
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /** Injectable clock for the stability window; default `Date.now`. */
   now?: () => number;
-  /** Called with each handle once a (re)start succeeds — e.g. to announce the bound URLs. */
-  onListening?: (handle: ServerHandle) => void;
+  /**
+   * Called with each handle once a (re)start succeeds — e.g. to announce the bound URLs, or (in
+   * `--docker` mode) to bring up `tailscale serve` in front of the freshly-bound serve ingress.
+   * AWAITED before the supervisor parks on the run, so an async hook completes (and is observable)
+   * in bring-up order; a throw propagates out of `superviseServer` so the caller can fail the
+   * bring-up.
+   */
+  onListening?: (handle: ServerHandle) => void | Promise<void>;
 }
 
 /** Default backoff sleep: a real timer that resolves immediately when the shutdown signal aborts. */
@@ -120,7 +126,7 @@ export async function superviseServer(options: SuperviseOptions): Promise<number
       continue;
     }
 
-    onListening?.(handle);
+    await onListening?.(handle);
     const outcome = await awaitShutdownOrCrash(handle, shutdownSignal);
     if (outcome === 'shutdown') {
       logger.info('shutdown signal received, closing server');

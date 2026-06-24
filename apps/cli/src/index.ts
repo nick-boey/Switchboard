@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
+  AppConfig,
   RuntimeContext,
   RuntimeLogger,
   RuntimeTelemetry,
@@ -7,28 +10,34 @@ import type {
 import { start } from '@switchboard/server';
 import { bootstrap } from './bootstrap.js';
 import { superviseServer } from './supervisor.js';
+import { createRuntimeRunner } from './runtime-runner.js';
+import { DEFAULT_SERVE_PORT, runDockerBringUp } from './docker.js';
 
 /**
  * `switchboard` CLI — the runtime's control plane (`runtime-cli-docker` Decision 1).
  *
  * `--version` plus a `start` that bootstraps config (Decision 4), builds a `RuntimeContext`, and
  * runs the server's imported `start(ctx)` under SUPERVISION (Decision 5: graceful
- * SIGINT/SIGTERM shutdown + bounded restart-on-crash). It imports the server's `start(ctx)` — it
- * does not reimplement the server.
+ * SIGINT/SIGTERM shutdown + bounded restart-on-crash). `start --docker` (Decision 6) is the
+ * in-container supervisor: it additionally brings up `tailscaled` (userspace) + `tailscale serve`
+ * in front of the dedicated serve ingress. It imports the server's `start(ctx)` — it does not
+ * reimplement the server.
  */
 
 /** Injected at build time by tsup (`define`), sourced from this package's `package.json`. */
 declare const __CLI_VERSION__: string;
 
-const USAGE = `switchboard — local control plane for the Switchboard runtime
+const USAGE = `switchboard — control plane for the Switchboard runtime
 
 Usage:
-  switchboard start        Boot the loopback server for a local run
-  switchboard --version    Print the CLI version
-  switchboard --help       Show this help
+  switchboard start            Boot the loopback server for a local run (supervised)
+  switchboard start --docker   In-container supervisor: tailscaled + tailscale serve + server
+  switchboard --version        Print the CLI version
+  switchboard --help           Show this help
 
-This is the local thin shell (design Decision 8). Docker/Tailscale orchestration
-is provided by a later change (runtime-cli-docker).
+A local 'start' is bearer-only. '--docker' brings up userspace Tailscale and exposes the server
+via 'tailscale serve' over a dedicated, non-host-published loopback serve port; see
+docs/user/running-switchboard.md for the Docker run (volumes, mounted secrets, credentials).
 `;
 
 /** Logs go to stderr so stdout stays reserved for the one machine-readable line (the URL). */
@@ -77,6 +86,60 @@ async function runStart(): Promise<number> {
 }
 
 /**
+ * `start --docker` (`runtime-cli-docker` Decision 6): the in-container supervisor. Bootstraps with
+ * the container-isolation assertion (no host publication — the precondition for serve-identity
+ * eligibility), ensures the dedicated serve ingress is configured, and brings up `tailscaled` +
+ * `tailscale serve` in front of `start(ctx)` via the real orchestration runner. The auth key is
+ * read from a mounted secret (env or `~/.switchboard/secrets/tailscale-authkey`), never baked in.
+ */
+async function runDocker(): Promise<number> {
+  const { config, configDir, assertNoHostPublication } = bootstrap({
+    assertNoHostPublication: true,
+  });
+  const servePort = config.listen.serve?.port ?? DEFAULT_SERVE_PORT;
+  // The server must bind the dedicated serve ingress `tailscale serve` proxies to; keep the direct
+  // ingress too for in-container probing (Decision 6 step 3).
+  const dockerConfig: AppConfig = {
+    ...config,
+    listen: { direct: config.listen.direct ?? { port: 0 }, serve: { port: servePort } },
+  };
+  const ctx: RuntimeContext = {
+    workspaceRoot: process.cwd(),
+    config: dockerConfig,
+    logger,
+    telemetry,
+    identity: { login: null, source: 'none' },
+    assertNoHostPublication,
+  };
+
+  return runDockerBringUp({
+    runner: createRuntimeRunner(),
+    start: () => start(ctx),
+    shutdownSignal: installShutdownSignal(),
+    logger,
+    servePort,
+    authKey: resolveAuthKey(configDir),
+    onListening: announceListening,
+  });
+}
+
+/** Read the Tailscale auth key from a mounted secret (env first, then the secrets dir). */
+function resolveAuthKey(configDir: string): string {
+  const fromEnv = process.env.TS_AUTHKEY ?? process.env.TAILSCALE_AUTHKEY;
+  if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
+  try {
+    const fromFile = readFileSync(join(configDir, 'secrets', 'tailscale-authkey'), 'utf8').trim();
+    if (fromFile.length > 0) return fromFile;
+  } catch {
+    // fall through to the explicit error below
+  }
+  throw new Error(
+    'no Tailscale auth key found: set TS_AUTHKEY (mounted secret) or place it in ' +
+      'secrets/tailscale-authkey under the config dir',
+  );
+}
+
+/**
  * stdout carries the machine-readable facts callers parse: the bound loopback URL of each ingress,
  * tagged so a consumer (e.g. the packaged-CLI smoke test) can address the direct vs serve port.
  */
@@ -119,11 +182,13 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 
   if (command === 'start') {
-    if (rest.length > 0) {
-      process.stderr.write(`switchboard: unexpected arguments for 'start': ${rest.join(' ')}\n`);
+    const docker = rest.includes('--docker');
+    const unknown = rest.filter((arg) => arg !== '--docker');
+    if (unknown.length > 0) {
+      process.stderr.write(`switchboard: unexpected arguments for 'start': ${unknown.join(' ')}\n`);
       return 1;
     }
-    return runStart();
+    return docker ? runDocker() : runStart();
   }
 
   process.stderr.write(`switchboard: unknown command '${command}'\n\n${USAGE}`);
