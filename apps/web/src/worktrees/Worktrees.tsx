@@ -1,8 +1,21 @@
 import { Box, Group, Stack, Text } from '@mantine/core';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { OperationStatus, WorktreeListResponse, WorktreeSummary } from '@switchboard/shared';
+import type {
+  OperationStatus,
+  PlugSessionStatus,
+  WorktreeListResponse,
+  WorktreeSummary,
+} from '@switchboard/shared';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
+import {
+  deriveSessionStatus,
+  dispatchPlugToggle,
+  fetchLiveSessions,
+  requestLaunch,
+  requestStop,
+  sessionLivenessQueryKey,
+} from '../sessions';
 import { Button } from '../ui/controls';
 import { StatusLight } from '../ui/lamp';
 import { Card } from '../ui/surface';
@@ -144,12 +157,64 @@ export function Worktrees({
     },
   });
 
+  // Session liveness (claude-session-launch Decision 4/5): tmux truth, re-read so the plug
+  // self-corrects after an external change. The set holds the `<wt-id>`s with a live session.
+  const livenessQuery = useQuery({
+    queryKey: sessionLivenessQueryKey(repoId),
+    queryFn: () => fetchLiveSessions(client, repoId),
+    refetchInterval: 4000,
+  });
+  const liveSet = livenessQuery.data ?? new Set<string>();
+
+  const invalidateLiveness = (): void => {
+    void queryClient.invalidateQueries({ queryKey: sessionLivenessQueryKey(repoId) });
+  };
+  const launchMut = useMutation({
+    mutationFn: (wtId: string) => requestLaunch(client, repoId, wtId),
+    onSettled: invalidateLiveness,
+  });
+  const stopMut = useMutation({
+    mutationFn: (wtId: string) => requestStop(client, repoId, wtId),
+    onSettled: invalidateLiveness,
+  });
+
+  // The worktree whose session is mid-mutation (optimistic transient) or whose last mutation failed.
+  const pendingWt = launchMut.isPending
+    ? launchMut.variables
+    : stopMut.isPending
+      ? stopMut.variables
+      : undefined;
+  const failedWt = launchMut.isError
+    ? launchMut.variables
+    : stopMut.isError
+      ? stopMut.variables
+      : undefined;
+
+  const worktrees = listQuery.isError ? undefined : listQuery.data?.worktrees;
+  const sessionStatusByWtId: Record<string, PlugSessionStatus> = {};
+  for (const wt of worktrees ?? []) {
+    sessionStatusByWtId[wt.wtId] = deriveSessionStatus({
+      live: liveSet.has(wt.wtId),
+      pending: pendingWt === wt.wtId,
+      failed: failedWt === wt.wtId,
+    });
+  }
+
+  const onToggleSession = (wt: WorktreeSummary, status: PlugSessionStatus): void => {
+    dispatchPlugToggle(status, {
+      launch: () => launchMut.mutate(wt.wtId),
+      stop: () => stopMut.mutate(wt.wtId),
+    });
+  };
+
   return (
     <Stack gap="md" data-testid="worktrees">
       <WorktreesView
         repoId={repoId}
-        worktrees={listQuery.isError ? undefined : listQuery.data?.worktrees}
+        worktrees={worktrees}
         isError={listQuery.isError}
+        sessionStatusByWtId={sessionStatusByWtId}
+        onToggleSession={onToggleSession}
         onAddWorktree={() => setCreating(true)}
         onRequestDelete={(wt) => setConfirming(wt)}
         onRetry={() => void listQuery.refetch()}

@@ -1,10 +1,11 @@
 import { Box, Group, Stack, Text, useComputedColorScheme, useMantineTheme } from '@mantine/core';
 import type { ReactNode } from 'react';
-import type { WorktreeSummary } from '@switchboard/shared';
+import type { PlugSessionStatus, WorktreeSummary } from '@switchboard/shared';
 import { Button, IconButton } from '../ui/controls';
 import { GitLamp, PrLamp, StatusLight } from '../ui/lamp';
 import { Plug } from '../ui/plug';
 import { Card } from '../ui/surface';
+import { sessionStatusToPlug } from '../sessions';
 import { isWorktreeSafeToDelete, prLampStatus } from './worktree-model';
 
 /**
@@ -80,10 +81,14 @@ export function DeleteWorktreeControl({
 function WorktreeRow({
   wt,
   divider,
+  sessionStatus,
+  onToggleSession,
   onRequestDelete,
 }: {
   wt: WorktreeSummary;
   divider: boolean;
+  sessionStatus: PlugSessionStatus;
+  onToggleSession?: (wt: WorktreeSummary, status: PlugSessionStatus) => void;
   onRequestDelete: (wt: WorktreeSummary) => void;
 }) {
   const safe = isWorktreeSafeToDelete(wt);
@@ -99,8 +104,15 @@ function WorktreeRow({
       </Text>
       <Group justify="space-between" wrap="nowrap" mt={8} align="center">
         <Group gap={14} wrap="nowrap" align="center">
-          {/* Display-only — the plug's on/off action is claude-session-launch's. */}
-          <Plug status="idle" size={26} label={wt.branch} data-testid={`wt-plug-${wt.wtId}`} />
+          {/* The session plug: off→launch, on→stop, starting→guarded (claude-session-launch). When
+              no `onToggleSession` is wired it stays a display-only status image. */}
+          <Plug
+            status={sessionStatusToPlug(sessionStatus)}
+            size={26}
+            label={wt.branch}
+            onActivate={onToggleSession ? () => onToggleSession(wt, sessionStatus) : undefined}
+            data-testid={`wt-plug-${wt.wtId}`}
+          />
           <Group gap={12} wrap="nowrap" align="center">
             <GitLamp status={wt.sync} data-testid={`wt-git-${wt.wtId}`} />
             <PrLamp status={prLampStatus(wt)} data-testid={`wt-pr-${wt.wtId}`} />
@@ -150,6 +162,13 @@ export interface WorktreesViewProps {
   worktrees: WorktreeSummary[] | undefined;
   /** True when the list query failed. */
   isError?: boolean;
+  /**
+   * Per-worktree session status (claude-session-launch Decision 5). A worktree with no entry reads
+   * `off`. When `onToggleSession` is omitted the plug is display-only.
+   */
+  sessionStatusByWtId?: Record<string, PlugSessionStatus>;
+  /** Activate a worktree's plug — launch (off) or stop (on/error); transient is guarded. */
+  onToggleSession?: (wt: WorktreeSummary, status: PlugSessionStatus) => void;
   onAddWorktree?: () => void;
   onRequestDelete?: (wt: WorktreeSummary) => void;
   onRetry?: () => void;
@@ -159,6 +178,8 @@ export function WorktreesView({
   repoId,
   worktrees,
   isError = false,
+  sessionStatusByWtId,
+  onToggleSession,
   onAddWorktree,
   onRequestDelete,
   onRetry,
@@ -209,6 +230,8 @@ export function WorktreesView({
           key={wt.wtId}
           wt={wt}
           divider={i > 0}
+          sessionStatus={sessionStatusByWtId?.[wt.wtId] ?? 'off'}
+          onToggleSession={onToggleSession}
           onRequestDelete={(w) => onRequestDelete?.(w)}
         />
       ))}

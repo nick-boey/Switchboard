@@ -62,3 +62,17 @@ export function plugToggleAction(status: PlugSessionStatus): SessionAction | nul
       return null;
   }
 }
+
+/**
+ * Dispatch the plug's activation for a session status (Decision 5): an `off` plug launches, a live
+ * (`on`) or `error` plug stops, a transient (`starting`) plug is guarded (neither). The hub passes
+ * its launch/stop mutation triggers; this keeps the launch-vs-stop decision a single pure choice.
+ */
+export function dispatchPlugToggle(
+  status: PlugSessionStatus,
+  handlers: { launch: () => void; stop: () => void },
+): void {
+  const action = plugToggleAction(status);
+  if (action === 'launch') handlers.launch();
+  else if (action === 'stop') handlers.stop();
+}

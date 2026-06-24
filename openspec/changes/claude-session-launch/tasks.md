@@ -143,11 +143,11 @@
 
 ## 10. Web: make the plug actionable on the worktrees hub (apps/web/src/worktrees)
 
-- [ ] 10.1 (red) Write the failing component/interaction tests: each worktree's plug renders its
+- [x] 10.1 (red) Write the failing component/interaction tests: each worktree's plug renders its
       session status; activating an **off** plug fires a launch and a **live** plug fires a stop; a
       **transient** plug is guarded (no action); **no** standalone session screen and **no**
       post-launch mobile-app handoff toast appear.
-- [ ] 10.2 (green) Wire the plug in `WorktreesView`/`Worktrees` to consume the session slice: pass
+- [x] 10.2 (green) Wire the plug in `WorktreesView`/`Worktrees` to consume the session slice: pass
       per-worktree `plugStatus` + `onToggleSession` (launch/stop) into the worktree rows, replacing
       the display-only `Plug status="idle"` with the live, actionable plug.
 

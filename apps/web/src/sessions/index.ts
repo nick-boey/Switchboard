@@ -2,6 +2,7 @@ export {
   deriveSessionStatus,
   sessionStatusToPlug,
   plugToggleAction,
+  dispatchPlugToggle,
   type SessionStatusInput,
   type SessionAction,
 } from './session-model';
