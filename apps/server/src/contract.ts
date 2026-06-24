@@ -3,6 +3,7 @@ import type {
   OperationStatus,
   RepoListResponse,
   RepoTarget,
+  SessionListResponse,
   WorktreeListResponse,
   WorktreeMode,
 } from '@switchboard/shared';
@@ -102,4 +103,35 @@ export type _WtStatusResponseContract = Expect<
 >;
 export type _WtListResponseContract = Expect<
   Equal<InferResponseType<WtListGet, 200>, WorktreeListResponse>
+>;
+
+// --- claude-session-launch routes (design Decision 4 / 8) -------------------
+// The typed client mirrors every session route; drift from the shared schemas fails the build.
+
+type SessLaunchPost = ServerClient['sessions']['launch']['$post'];
+type SessStopPost = ServerClient['sessions']['stop']['$post'];
+type SessListGet = ServerClient['sessions'][':owner'][':repo']['$get'];
+type SessStatusGet = ServerClient['sessions'][':owner'][':repo'][':wtId']['status']['$get'];
+
+// Launch + stop send the shared `{ repoId, wtId }` shape.
+export type _SessLaunchRequestContract = Expect<
+  Equal<InferRequestType<SessLaunchPost>['json'], { repoId: string; wtId: string }>
+>;
+export type _SessStopRequestContract = Expect<
+  Equal<InferRequestType<SessStopPost>['json'], { repoId: string; wtId: string }>
+>;
+
+// Launch + launch-status return the shared operation status; stop reports a typed stopped outcome;
+// the per-repo list returns the shared existence + mapping response.
+export type _SessLaunchResponseContract = Expect<
+  Equal<InferResponseType<SessLaunchPost, 200>, OperationStatus>
+>;
+export type _SessStopResponseContract = Expect<
+  Equal<InferResponseType<SessStopPost, 200>, { status: 'stopped' }>
+>;
+export type _SessStatusResponseContract = Expect<
+  Equal<InferResponseType<SessStatusGet, 200>, OperationStatus>
+>;
+export type _SessListResponseContract = Expect<
+  Equal<InferResponseType<SessListGet, 200>, SessionListResponse>
 >;

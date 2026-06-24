@@ -121,13 +121,13 @@
 
 ## 8. Server: session API routes, contract, typed client, telemetry redaction (apps/server)
 
-- [ ] 8.1 (red) Write the route tests (`apps/server/src/sessions/routes.test.ts`): launch / stop /
+- [x] 8.1 (red) Write the route tests (`apps/server/src/sessions/routes.test.ts`): launch / stop /
       launch-status / session-list routes reject malformed `<repo-id>`/`<wt-id>` with `422` (handler
       not invoked) and report the shared shapes; the typed-client contract test fails on schema
       drift. Write `apps/server/src/sessions/no-leak.test.ts`: the session name, worktree path,
       `(repo-id, wt-id)`, and launch argv never reach unredacted span attributes; subprocess stderr
       is not logged.
-- [ ] 8.2 (green) Wire the session routes into `app.ts` (launch / stop / status / per-repo list),
+- [x] 8.2 (green) Wire the session routes into `app.ts` (launch / stop / status / per-repo list),
       extend `contract.ts` + `client.ts` to mirror them, and add the new sensitive attribute keys
       (session name, worktree path, launch argv) to the blocklist in `telemetry.ts`.
 

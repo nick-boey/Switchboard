@@ -51,6 +51,11 @@ const KEY_BLOCKLIST: readonly RegExp[] = [
   /worktree/i,
   /\bwt[._-]?id\b/i,
   /\bslug\b/i,
+  // claude-session-launch Decision 7: the tmux session name is branch-derived (the same slug-leak
+  // vector), and session spans also carry the worktree path, `(repo-id, wt-id)`, and launch argv —
+  // mask every `session.*` attribute key outright (the path/argv are also covered by the path/arg
+  // keys above, but this guarantees the name and `(repo-id, wt-id)` never escape unredacted).
+  /session/i,
   /(?:^|[._-])refs?(?:$|[._-])/i,
   /arg(?:s|v)?\b/i,
   /command|cmdline/i,
