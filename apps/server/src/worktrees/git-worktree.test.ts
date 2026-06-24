@@ -299,6 +299,81 @@ describe('worktree Git service', () => {
     // No lingering ownership claim — a future user-placed directory here is never mistaken for ours.
     expect(existsSync(`${path}.pending`)).toBe(false);
   });
+
+  it('claims the destination ATOMICALLY: a pre-existing dir fails dest-exists and is never marked', async () => {
+    // Finding A (TOCTOU): the claim is an exclusive create of the destination directory itself, not
+    // an existsSync probe followed by a marker write. A directory this op did not atomically create
+    // fails with EEXIST → typed `dest-exists`, and CRUCIALLY no ownership marker is ever planted
+    // beside it — so a foreign dir can never be marked "owned" and then deleted by failure cleanup.
+    const branch = 'feature/atomic-claim';
+    const wtId = idForBranch(branch);
+    const path = join(worktreesDir(fx.ctx, fx.target), wtId);
+    const marker = `${path}.pending`;
+    mkdirSync(path, { recursive: true });
+    const sentinel = join(path, 'precious.txt');
+    writeFileSync(sentinel, 'do-not-delete');
+
+    await expect(
+      service.createWorktree({ target: fx.target, branch, mode: 'new' }, { token: 'token-this' }),
+    ).rejects.toMatchObject({ kind: 'dest-exists' });
+    // The atomic claim NEVER marks a directory it did not create.
+    expect(existsSync(marker)).toBe(false);
+
+    // Failure-cleanup with this op's own token must leave the unmarked, unowned dir + sentinel intact.
+    await service.removeWorktreeIfIncomplete(fx.target, wtId, 'token-this');
+    expect(existsSync(path)).toBe(true);
+    expect(readFileSync(sentinel, 'utf8')).toBe('do-not-delete');
+  });
+
+  it('refuses to remove a valid-id directory git never registered (force-delete guard)', async () => {
+    // Finding B: a NORMAL user directory sits at worktrees/<valid wt-id> — git never managed it as a
+    // worktree. The user-delete path forces `git worktree remove`, but must require git-registration
+    // BEFORE any filesystem removal: an unmanaged directory is refused with a typed error and never
+    // rmSync-ed, even though the wt-id is structurally valid.
+    const wtId = idForBranch('feature/not-a-worktree');
+    const path = join(worktreesDir(fx.ctx, fx.target), wtId);
+    mkdirSync(path, { recursive: true });
+    const sentinel = join(path, 'user-data.txt');
+    writeFileSync(sentinel, 'precious-user-data');
+
+    await expect(service.removeWorktree(fx.target, wtId)).rejects.toMatchObject({
+      kind: 'dest-not-managed',
+    });
+    // The unmanaged directory and its contents survive — no rmSync ran.
+    expect(existsSync(path)).toBe(true);
+    expect(readFileSync(sentinel, 'utf8')).toBe('precious-user-data');
+  });
+
+  it('removeWorktreeIfIncomplete still cleans an owned partial that git never registered', async () => {
+    // The cleanup path must NOT inherit the user-delete registration guard: a genuine partial this
+    // op created (atomic-claim + token) is by definition NOT git-registered, yet it must still be
+    // removable on failure cleanup. Guards by ownership (token), not by git registration.
+    const branch = 'feature/owned-unregistered-partial';
+    const wtId = idForBranch(branch);
+    const path = join(worktreesDir(fx.ctx, fx.target), wtId);
+    const real = createGitRunner();
+    const runner: GitRunner = {
+      run: (a, o) => real.run(a, o),
+      capture: (a, o) => {
+        if (a.includes('worktree') && a.includes('add')) {
+          // git "partially" populated the (atomically-claimed, empty) dir then failed mid-checkout.
+          writeFileSync(join(path, '.partial'), 'half-written');
+          return Promise.resolve({ code: 1, stdout: '' });
+        }
+        return real.capture(a, o);
+      },
+    };
+    const svc = createWorktreeService(fx.ctx, { gitService: fx.gitService, runner });
+
+    await expect(
+      svc.createWorktree({ target: fx.target, branch, mode: 'new' }, { token: 'token-A' }),
+    ).rejects.toBeInstanceOf(WorktreeError);
+    expect(existsSync(path)).toBe(true); // owned partial left on disk
+
+    await svc.removeWorktreeIfIncomplete(fx.target, wtId, 'token-A');
+    expect(existsSync(path)).toBe(false);
+    expect(existsSync(`${path}.pending`)).toBe(false);
+  });
 });
 
 describe('classifySync (git lamp coarse state)', () => {

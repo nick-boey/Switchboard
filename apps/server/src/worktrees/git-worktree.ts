@@ -174,6 +174,31 @@ export function createWorktreeService(
     return parsePorcelain(stdout);
   };
 
+  // True only when git reports a NON-bare worktree at exactly `worktrees/<wtId>` under THIS repo's
+  // worktrees root. Paths are compared as realpaths (macOS /var→/private/var) so a symlinked entry
+  // cannot masquerade as living under the root. This is the registration proof the user-delete path
+  // requires BEFORE any filesystem removal (Finding B): a normal/user directory git never managed as
+  // a worktree is not removable, even when its `<wt-id>` is structurally valid.
+  const isRegisteredWorktree = async (t: RepoTarget, wtId: string): Promise<boolean> => {
+    const raw = await rawWorktrees(t);
+    const root = worktreesRoot(t);
+    const realRoot = existsSync(root) ? realpathSync(root) : root;
+    const resolve = (p: string): string => (existsSync(p) ? realpathSync(p) : p);
+    return raw.some(
+      (wt) => !wt.bare && basename(wt.path) === wtId && resolve(dirname(wt.path)) === realRoot,
+    );
+  };
+
+  // Remove ONLY the leaf checkout directory + prune the admin entry — never a parent, a sibling, the
+  // bare clone, or the branch. The CALLER must first establish the right to delete `path` (git
+  // registration for the user-delete path; atomic-create + token ownership for failure cleanup); the
+  // best-effort `worktree remove` covers a half-registered partial, then the leaf is rmSync-ed.
+  const forceRemoveLeaf = async (bare: string, path: string): Promise<void> => {
+    await probe(['--git-dir', bare, 'worktree', 'remove', '--force', path]);
+    await probe(['--git-dir', bare, 'worktree', 'prune']);
+    rmSync(path, { recursive: true, force: true });
+  };
+
   const fetchOrigin = async (t: RepoTarget, options: WorktreeRunOptions): Promise<void> => {
     const bare = gitService.bareDir(t);
     // Ensure remote-tracking refs exist so a worktree can track origin/<branch>.
@@ -235,20 +260,31 @@ export function createWorktreeService(
 
       const path = worktreePath(target, wtId);
       const marker = pendingMarkerPath(target, wtId);
-      mkdirSync(dirname(path), { recursive: true });
+      // Ensure the worktrees/ container exists (a shared parent, never user data).
+      mkdirSync(worktreesRoot(target), { recursive: true });
 
-      // 5. Destination-safety preflight (data-loss guard). The collision check above only sees
-      // git-registered worktrees; a NORMAL directory already at `path` is someone else's data (a
-      // stray dir, a user's dir, or a DIFFERENT operation's partial). Refuse unless an ownership
-      // marker proves THIS operation (matching token) already owns the path. A missing, stale, or
-      // foreign-token marker is never ours → refuse with a typed error and do NOT (re)claim it, so
-      // the failure-cleanup path will never delete it.
-      if (existsSync(path) && !ownedBy(marker, token)) {
-        throw new WorktreeError('dest-exists', 'worktree destination already exists');
+      // 5. ATOMIC destination claim (data-loss guard, Finding A). EXCLUSIVELY create the destination
+      // directory itself with `recursive: false`: an already-existing path fails atomically with
+      // EEXIST, so there is NO existsSync→write TOCTOU window in which a foreign process could plant
+      // a directory we then mark as "owned" and later delete. The collision check above only sees
+      // git-registered worktrees; a NORMAL directory already at `path` (a user's dir, a stray dir, or
+      // a different op's partial) makes the exclusive create fail → typed `dest-exists`, and we NEVER
+      // claim (mark) it, so failure-cleanup can never delete it. git's `worktree add` accepts a
+      // pre-existing EMPTY directory (verified against git 2.x), so this exclusive claim composes
+      // with the add below.
+      try {
+        mkdirSync(path, { recursive: false });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+          throw new WorktreeError('dest-exists', 'worktree destination already exists');
+        }
+        throw err;
       }
-      // Claim ownership of `path` BEFORE any filesystem mutation: the marker's CONTENT is this op's
-      // token, so a partial left by a crash/abort is provably ours (and only ours) and can be
-      // cleaned. Released on success (below); kept on failure for the token-gated cleanup.
+      // Record THIS operation's atomic ownership of `path`: the marker's CONTENT is this op's token,
+      // written ONLY AFTER the exclusive create succeeded — so a matching-token marker is durable
+      // proof that THIS exact operation atomically created the destination (it can never be planted
+      // beside a foreign dir). Released on success (below); kept on failure for the token-gated
+      // cleanup, which therefore deletes only a destination this operation provably created.
       writeFileSync(marker, token);
 
       // Telemetry (Decision 7): sensitive values go under blocklisted keys so the redactor masks
@@ -344,7 +380,7 @@ export function createWorktreeService(
 
     async removeWorktree(target, wtId) {
       const bare = gitService.bareDir(target);
-      const path = worktreePath(target, wtId);
+      const path = worktreePath(target, wtId); // re-validates the id (defence against traversal)
       ctx.telemetry
         .startSpan('worktree.delete', {
           repoId: toRepoId(target),
@@ -352,10 +388,20 @@ export function createWorktreeService(
           'worktree.path': path,
         })
         .end();
-      // Remove ONLY the checkout: never the bare clone, a sibling, or the git branch.
-      await probe(['--git-dir', bare, 'worktree', 'remove', '--force', path]);
+      // Registration guard (Finding B): the user-delete path forces git's removal, so it MUST first
+      // confirm git actually manages a worktree at exactly this path under THIS repo's worktrees
+      // root. A normal/user directory git never registered (or an absent id) is refused with a typed
+      // error and NEVER rmSync-ed — `force` bypasses git's safe-to-delete, but not this guard.
+      if (!(await isRegisteredWorktree(target, wtId))) {
+        throw new WorktreeError('dest-not-managed', 'worktree is not git-managed');
+      }
+      // Remove ONLY the checkout: never the bare clone, a sibling, or the git branch. Honor git's
+      // result — only clear a leftover remnant once git acknowledged removing the registered worktree
+      // (never blindly rmSync a path git declined to remove).
+      const removed = await probe(['--git-dir', bare, 'worktree', 'remove', '--force', path]);
       await probe(['--git-dir', bare, 'worktree', 'prune']);
-      rmSync(path, { recursive: true, force: true });
+      if (removed.code !== 0) throw new WorktreeError('git-failure', 'worktree remove failed');
+      if (existsSync(path)) rmSync(path, { recursive: true, force: true });
     },
 
     async isWorktreeComplete(target, wtId) {
@@ -367,17 +413,23 @@ export function createWorktreeService(
 
     async removeWorktreeIfIncomplete(target, wtId, expectedToken) {
       if (await service.isWorktreeComplete(target, wtId)) return;
+      const bare = gitService.bareDir(target);
       const path = worktreePath(target, wtId);
       const marker = pendingMarkerPath(target, wtId);
       // Operation-scoped ownership proof. A directory that exists on disk is deletable ONLY when an
-      // ownership marker proves THIS operation created it: the marker's token must equal the failed
-      // op's own `expectedToken` (from its metadata). A path with a missing, stale, or foreign-token
-      // marker — or when no expected token is supplied — was NOT created by this operation (git also
-      // does not report it — `isWorktreeComplete` is false), so it is someone else's data. NEVER
-      // delete it. Only an owned (token-matching) or already-absent path proceeds.
+      // ownership marker proves THIS operation atomically created it: the marker's token must equal
+      // the failed op's own `expectedToken` (from its metadata), and the marker is written only after
+      // the exclusive-create claim — so a matching token means this op created this destination. A
+      // path with a missing, stale, or foreign-token marker — or when no expected token is supplied —
+      // was NOT created by this operation (git also does not report it — `isWorktreeComplete` is
+      // false), so it is someone else's data. NEVER delete it. Only an owned (token-matching) or
+      // already-absent path proceeds.
       const owned = ownedBy(marker, expectedToken);
       if (existsSync(path) && !owned) return;
-      await service.removeWorktree(target, wtId);
+      // Authorized by atomic-create + token ownership — NOT routed through the registration-guarded
+      // user-delete path, because a genuine partial this op created is by definition not yet a
+      // git-registered worktree. Removes only the owned leaf.
+      await forceRemoveLeaf(bare, path);
       // Clear the marker only when it was ours (a non-matching marker belongs to another op).
       if (owned) rmSync(marker, { force: true });
     },

@@ -124,6 +124,18 @@ the idempotent path, not a collision.
   operation's own token), so it never deletes a path it did not create, while a genuine partial
   worktree this operation did create is still removed and a completed worktree is never removed
 
+#### Scenario: The destination is claimed atomically so no concurrent directory is mistaken for ours
+
+- **WHEN** a worktree create reaches its destination claim and the destination path does not yet
+  exist, but a foreign process could create a directory there concurrently
+- **THEN** the create claims the destination by **exclusively creating the destination directory
+  itself** (an atomic create that fails if the path already exists), rather than by probing for
+  existence and then writing an ownership marker in a separate step — so an already-existing path
+  fails atomically with a typed `dest-exists` error and the operation NEVER records ownership of (or
+  later deletes) a directory it did not itself create; the ownership marker is written only after
+  the exclusive create succeeds, and the exclusive claim composes with `git worktree add`, which
+  accepts the pre-existing empty directory the claim created
+
 #### Scenario: A stale or foreign ownership marker never authorizes deleting another operation's or a user's data
 
 - **WHEN** a worktree create targets a `<wt-id>` path beside which an ownership marker left by a
@@ -254,6 +266,17 @@ merged-PR input.
 
 - **WHEN** deletion is requested with an explicit force flag
 - **THEN** the worktree is removed even though it is not safe to delete
+
+#### Scenario: A delete refuses a path git does not manage as a worktree
+
+- **WHEN** deletion is requested (including with the force flag) for a structurally valid `<wt-id>`
+  whose on-disk path is a normal directory that git does not report as a worktree under this
+  repository's worktrees root (a user's directory, or any directory git never registered)
+- **THEN** the delete establishes git-registration of the target **before any filesystem removal**,
+  refuses the request with a typed not-managed/not-found error, and removes nothing — the force flag
+  bypasses git's safe-to-delete check but never the registration requirement, so a forced delete can
+  never remove an arbitrary directory git did not manage; and the directory removal honors the
+  result of git's worktree removal rather than unconditionally deleting the path afterward
 
 #### Scenario: Session-liveness and PR-merged inputs degrade safely
 

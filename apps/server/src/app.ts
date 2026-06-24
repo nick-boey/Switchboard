@@ -19,7 +19,7 @@ import { authMiddleware, corsMiddleware } from './auth.js';
 import { telemetryMiddleware } from './telemetry.js';
 import { createCloneOrchestrator, type CloneOrchestrator } from './repos/index.js';
 import { createWorktreeOrchestrator, type WorktreeOrchestrator } from './worktrees/orchestrator.js';
-import { WorktreeNotSafeError } from './worktrees/errors.js';
+import { WorktreeError, WorktreeNotSafeError } from './worktrees/errors.js';
 import { listGitHubRepos } from './github/index.js';
 
 /** Injected slice dependencies (tests supply fakes; `start`/`createApp` build real ones). */
@@ -175,6 +175,10 @@ export function createApp(ctx: RuntimeContext, options: CreateAppOptions = {}) {
         } catch (err) {
           if (err instanceof WorktreeNotSafeError)
             return c.json({ status: 'not-safe' as const }, 200);
+          // The target is not a git-managed worktree under this repo (Finding B): never removed,
+          // surfaced as a typed not-found outcome rather than a 500.
+          if (err instanceof WorktreeError && err.kind === 'dest-not-managed')
+            return c.json({ status: 'not-found' as const }, 200);
           throw err;
         }
       },

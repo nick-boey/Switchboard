@@ -11,6 +11,7 @@ export type WorktreeErrorKind =
   | 'branch-exists'
   | 'branch-not-found'
   | 'dest-exists'
+  | 'dest-not-managed'
   | 'not-safe'
   | 'git-failure';
 

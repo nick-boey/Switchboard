@@ -3,7 +3,7 @@ import { makeTestContext } from '@switchboard/shared/testing';
 import type { OperationStatus, ServerHandle, WorktreeSummary } from '@switchboard/shared';
 import { start } from '../server.js';
 import { createServerClient, type ServerClient } from '../client.js';
-import { WorktreeNotSafeError } from './errors.js';
+import { WorktreeError, WorktreeNotSafeError } from './errors.js';
 import type { WorktreeOrchestrator } from './orchestrator.js';
 
 /**
@@ -18,7 +18,7 @@ describe('worktree routes + typed client', () => {
 
   function makeFake() {
     const calls = { start: 0, list: 0, delete: 0, status: 0 };
-    let deleteBehaviour: 'ok' | 'not-safe' = 'ok';
+    let deleteBehaviour: 'ok' | 'not-safe' | 'not-managed' = 'ok';
     let statusResult: OperationStatus | null = null;
     const list: WorktreeSummary[] = [
       {
@@ -45,6 +45,8 @@ describe('worktree routes + typed client', () => {
       async deleteWorktree() {
         calls.delete += 1;
         if (deleteBehaviour === 'not-safe') throw new WorktreeNotSafeError();
+        if (deleteBehaviour === 'not-managed')
+          throw new WorktreeError('dest-not-managed', 'not a managed worktree');
       },
       async getStatus() {
         calls.status += 1;
@@ -61,7 +63,7 @@ describe('worktree routes + typed client', () => {
     return {
       calls,
       orchestrator,
-      set deleteBehaviour(v: 'ok' | 'not-safe') {
+      set deleteBehaviour(v: 'ok' | 'not-safe' | 'not-managed') {
         deleteBehaviour = v;
       },
       set statusResult(v: OperationStatus | null) {
@@ -165,6 +167,19 @@ describe('worktree routes + typed client', () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'not-safe' });
+  });
+
+  it('delete: reports not-found when the target is not a git-managed worktree', async () => {
+    // Finding B at the route boundary: a forced delete of a valid wt-id that git never registered
+    // surfaces the typed dest-not-managed refusal as a not-found outcome (no filesystem removal).
+    const fake = makeFake();
+    fake.deleteBehaviour = 'not-managed';
+    const client = await boot(fake.orchestrator);
+    const res = await client.worktrees.delete.$post({
+      json: { repoId: 'acme/infra', wtId: 'feature-x--0123456789ab', force: true },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: 'not-found' });
   });
 
   it('status: reports the operation status, 404 when unknown', async () => {

@@ -86,12 +86,16 @@ export type _WtDeleteRequestContract = Expect<
   Equal<InferRequestType<WtDeletePost>['json'], { repoId: string; wtId: string; force?: boolean }>
 >;
 
-// Create returns the shared operation status; delete reports a typed deleted/not-safe outcome.
+// Create returns the shared operation status; delete reports a typed deleted/not-safe/not-found
+// outcome (not-found = the target is not a git-managed worktree, so nothing was removed).
 export type _WtCreateResponseContract = Expect<
   Equal<InferResponseType<WtCreatePost, 200>, OperationStatus>
 >;
 export type _WtDeleteResponseContract = Expect<
-  Equal<InferResponseType<WtDeletePost, 200>, { status: 'deleted' } | { status: 'not-safe' }>
+  Equal<
+    InferResponseType<WtDeletePost, 200>,
+    { status: 'deleted' } | { status: 'not-safe' } | { status: 'not-found' }
+  >
 >;
 export type _WtStatusResponseContract = Expect<
   Equal<InferResponseType<WtStatusGet, 200>, OperationStatus>
