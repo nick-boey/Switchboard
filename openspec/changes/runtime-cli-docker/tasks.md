@@ -1,6 +1,6 @@
 ## 1. Test infrastructure
 
-- [ ] 1.1 Build the **dual-ingress test helper** in `apps/server/src/testing/` (e.g.
+- [x] 1.1 Build the **dual-ingress test helper** in `apps/server/src/testing/` (e.g.
       `dual-ingress.ts`): bind `start(ctx)` with a listen spec carrying both a direct loopback-TCP
       port and a dedicated serve port (two loopback-TCP listeners), issue an HTTP request to **each**
       port, and assert both bind loopback only and that `close()` releases both. Add its own
@@ -19,46 +19,46 @@
 
 ## 2. Shared: runtime listen-spec config schema (packages/shared)
 
-- [ ] 2.1 (red) Extend `packages/shared/src/config.test.ts`: the schema parses a **direct-only** spec,
+- [x] 2.1 (red) Extend `packages/shared/src/config.test.ts`: the schema parses a **direct-only** spec,
       a **serve-only** spec, and a **dual** spec; rejects an invalid spec (bad/out-of-range port) with
       a **field-named** error; and an existing config with **no** listen spec still parses (defaults to
       the prior loopback-TCP-only shape — back-compat).
-- [ ] 2.2 (green) Add the **listen specification** (direct loopback-TCP ingress + optional dedicated
+- [x] 2.2 (green) Add the **listen specification** (direct loopback-TCP ingress + optional dedicated
       serve ingress on its own port, with the secrets dir layout) to `packages/shared/src/config.ts`,
       defaulting to the loopback-TCP-only shape, and export from the `@switchboard/shared` barrel
       (`index.ts`). Keep `loadConfig()`'s first-run secure-defaults behaviour intact.
 
 ## 3. Server: dedicated serve ingress + dual-listener lifecycle (apps/server)
 
-- [ ] 3.1 (red) Extend `apps/server/src/server.test.ts` (using the 1.1 helper): `start(ctx)` with a
+- [x] 3.1 (red) Extend `apps/server/src/server.test.ts` (using the 1.1 helper): `start(ctx)` with a
       **dedicated serve** listen spec listens on its own loopback-TCP port and serves `/health` `200`
       **on it**, distinct from the direct port; with either spec it stays loopback-only (no
       non-loopback bind); `close()` releases **every** listener's port.
-- [ ] 3.2 (green) Implement the listen spec in `apps/server/src/server.ts`: build **one Node server
+- [x] 3.2 (green) Implement the listen spec in `apps/server/src/server.ts`: build **one Node server
       per ingress** fronting the same Hono app, each on its own loopback-TCP port; `close()` releases
       every listener. Keep `ServerHandle.url` reporting the loopback URL when a direct ingress is
       present.
 
 ## 4. Server: ingress-scoped identity trust on the auth gate (apps/server)
 
-- [ ] 4.1 (red) Extend `apps/server/src/auth.test.ts`: the auth gate trusts a serve identity **only on
+- [x] 4.1 (red) Extend `apps/server/src/auth.test.ts`: the auth gate trusts a serve identity **only on
       the dedicated serve ingress** — an allowlisted identity on the serve port is admitted without a
       bearer; a **non-allowlisted** identity on the serve port → `403`; with trust **off** (default)
       identity headers are ignored on **every** ingress. Add the **spoof-close regression**: the
       **same** serve markers + allowlisted login presented on the **direct loopback-TCP** ingress are
       **rejected** unless a valid bearer is present (the direct loopback path is bearer-only).
-- [ ] 4.2 (green) Parameterise `authMiddleware` (`apps/server/src/auth.ts`) by an **ingress
+- [x] 4.2 (green) Parameterise `authMiddleware` (`apps/server/src/auth.ts`) by an **ingress
       identity-trust flag** built per-ingress in `createApp`/`start` (Decision 2/3): the direct
       loopback ingress is bearer-only and never consults `tailscale-user-*`; the dedicated serve
       ingress is identity-eligible with the serve markers kept as defence-in-depth and the allowlist
       check unchanged.
-- [ ] 4.3 (red) Extend `apps/server/src/auth.test.ts` with the **host-reachable serve-port negative**:
+- [x] 4.3 (red) Extend `apps/server/src/auth.test.ts` with the **host-reachable serve-port negative**:
       bind a serve ingress **without** the container-isolation assertion (no no-host-publication
       assertion) and present the **full serve markers + an allowlisted `tailscale-user-login`** on it —
       assert the identity is **not** admitted (those forged markers grant nothing) and a valid bearer
       is still required. This proves identity-eligibility is gated by the isolation assertion, not by
       the headers, even when a serve ingress happens to be reachable from the host.
-- [ ] 4.4 (green) Thread a **container-isolation assertion** (no host publication) into the per-ingress
+- [x] 4.4 (green) Thread a **container-isolation assertion** (no host publication) into the per-ingress
       identity-trust flag from 4.2 so a serve ingress is identity-eligible **only** when the runtime
       asserts it is not host-published; a serve ingress bound without that assertion is bearer-only
       (`tailscale-user-*` ignored). Carry the assertion on the listen spec / `RuntimeContext` passed to

@@ -18,7 +18,7 @@ import {
   type RuntimeIdentity,
   type SessionListResponse,
 } from '@switchboard/shared';
-import { authMiddleware, corsMiddleware } from './auth.js';
+import { authMiddleware, corsMiddleware, DIRECT_INGRESS_TRUST, type IngressTrust } from './auth.js';
 import { telemetryMiddleware } from './telemetry.js';
 import { createCloneOrchestrator, type CloneOrchestrator } from './repos/index.js';
 import { createWorktreeOrchestrator, type WorktreeOrchestrator } from './worktrees/orchestrator.js';
@@ -53,6 +53,14 @@ export interface CreateAppOptions {
   repos?: RepoDeps;
   worktrees?: WorktreeDeps;
   sessions?: SessionDeps;
+  /**
+   * The bind-time, ingress-scoped identity-trust flag (`runtime-cli-docker` Decision 3). `start`
+   * builds one app per ingress and passes the matching flag — the direct ingress gets
+   * `DIRECT_INGRESS_TRUST` (bearer-only); the dedicated serve ingress gets `serveIngressTrust(ctx)`.
+   * Defaults to the bearer-only direct-ingress semantics, so an app built without it never trusts a
+   * serve identity (the spoof-safe default).
+   */
+  ingress?: IngressTrust;
 }
 
 /**
@@ -161,8 +169,9 @@ export function createApp(ctx: RuntimeContext, options: CreateAppOptions = {}) {
   // Unauthenticated liveness endpoint — registered BEFORE the auth gate so it stays exempt.
   app.get('/health', (c) => c.json({ status: 'ok' as const }, 200));
 
-  // The auth gate guards everything mounted after it (design Decision 3).
-  app.use('*', authMiddleware(ctx));
+  // The auth gate guards everything mounted after it (design Decision 3), parameterised by the
+  // bind-time, ingress-scoped identity-trust flag (`runtime-cli-docker` Decision 3).
+  app.use('*', authMiddleware(ctx, options.ingress ?? DIRECT_INGRESS_TRUST));
 
   const routes = app
     .post('/echo', zValidator('json', echoSchema, onInvalid), (c) => {

@@ -44,3 +44,51 @@ describe('configSchema', () => {
     expect(typeof cfg.bearerToken).toBe('string');
   });
 });
+
+describe('listen specification (runtime-cli-docker Decision 2/4)', () => {
+  it('back-compat: a config with no listen spec defaults to the loopback-TCP-only shape', () => {
+    const parsed = configSchema.parse({ bearerToken: 'x' });
+    // The prior shape: a direct/local loopback-TCP ingress on an ephemeral port, no serve ingress.
+    expect(parsed.listen.direct).toEqual({ port: 0 });
+    expect(parsed.listen.serve).toBeUndefined();
+  });
+
+  it('parses a direct-only spec', () => {
+    const parsed = configSchema.parse({ bearerToken: 'x', listen: { direct: { port: 3000 } } });
+    expect(parsed.listen.direct).toEqual({ port: 3000 });
+    expect(parsed.listen.serve).toBeUndefined();
+  });
+
+  it('parses a serve-only spec (no direct ingress)', () => {
+    const parsed = configSchema.parse({ bearerToken: 'x', listen: { serve: { port: 8080 } } });
+    expect(parsed.listen.serve).toEqual({ port: 8080 });
+    expect(parsed.listen.direct).toBeUndefined();
+  });
+
+  it('parses a dual spec (direct + dedicated serve ingress)', () => {
+    const parsed = configSchema.parse({
+      bearerToken: 'x',
+      listen: { direct: { port: 0 }, serve: { port: 8080 } },
+    });
+    expect(parsed.listen.direct).toEqual({ port: 0 });
+    expect(parsed.listen.serve).toEqual({ port: 8080 });
+  });
+
+  it('rejects an out-of-range serve port with a field-named issue', () => {
+    const result = configSchema.safeParse({ bearerToken: 'x', listen: { serve: { port: 70000 } } });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join('.'));
+      expect(paths.some((p) => p === 'listen.serve.port')).toBe(true);
+    }
+  });
+
+  it('rejects a negative direct port with a field-named issue', () => {
+    const result = configSchema.safeParse({ bearerToken: 'x', listen: { direct: { port: -1 } } });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join('.'));
+      expect(paths.some((p) => p === 'listen.direct.port')).toBe(true);
+    }
+  });
+});

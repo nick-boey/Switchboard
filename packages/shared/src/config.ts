@@ -42,6 +42,37 @@ export const githubConfigSchema = z
   .nullable()
   .default(null);
 
+/**
+ * The runtime **listen specification** (`runtime-cli-docker` Decision 2/4). Describes which
+ * loopback-TCP ingresses `start(ctx)` binds:
+ *
+ * - `direct` — the direct/local loopback-TCP ingress (bearer-only). `port: 0` is ephemeral (the
+ *   prior default shape).
+ * - `serve` — the OPTIONAL dedicated loopback-TCP serve ingress on its own port: the
+ *   serve-exclusive ingress that `tailscale serve` proxies to (`http://127.0.0.1:<port>`), bound
+ *   only inside the container's network namespace and never published to the host.
+ *
+ * The server ALWAYS binds loopback (`127.0.0.1`) for both — the host is not configurable, so the
+ * "loopback bind only" invariant cannot be weakened by config. The schema is **mode-agnostic**:
+ * it carries no host/container assertion (that is a CLI bootstrap input — Decision 4). Defaults
+ * to the prior loopback-TCP-only shape (direct ingress, ephemeral port) for back-compat.
+ */
+export const directIngressSchema = z.object({
+  /** Direct/local loopback-TCP port; `0` (the default) binds an ephemeral port. */
+  port: z.number().int().min(0).max(65535).default(0),
+});
+export const serveIngressSchema = z.object({
+  /** Dedicated serve-ingress loopback-TCP port; `0` binds an ephemeral port (resolved at bind). */
+  port: z.number().int().min(0).max(65535),
+});
+export const listenConfigSchema = z
+  .object({
+    direct: directIngressSchema.optional(),
+    serve: serveIngressSchema.optional(),
+  })
+  .default({ direct: { port: 0 } });
+export type ListenConfig = z.infer<typeof listenConfigSchema>;
+
 export const configSchema = z.object({
   /** Bearer token for the always-available bearer auth path; generated on first run. */
   bearerToken: z.string().min(1),
@@ -53,6 +84,11 @@ export const configSchema = z.object({
   trustServeIdentity: z.boolean().default(false),
   /** Allowlisted serve identities admitted without a bearer token (when trust is on). */
   identityAllowlist: z.array(z.string()).default(['nick-boey@github']),
+  /**
+   * The runtime listen specification (`runtime-cli-docker` Decision 2/4). Defaults to the prior
+   * loopback-TCP-only shape (direct ingress, ephemeral port) so existing configs stay valid.
+   */
+  listen: listenConfigSchema,
   telemetry: telemetryConfigSchema,
   cors: corsConfigSchema,
   /**
@@ -64,3 +100,5 @@ export const configSchema = z.object({
 
 export type AppConfig = z.infer<typeof configSchema>;
 export type GithubConfig = z.infer<typeof githubConfigSchema>;
+export type DirectIngressConfig = z.infer<typeof directIngressSchema>;
+export type ServeIngressConfig = z.infer<typeof serveIngressSchema>;

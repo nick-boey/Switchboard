@@ -10,6 +10,7 @@ export type {
   RuntimeTelemetry,
   RuntimeIdentity,
   ServerHandle,
+  ServerHandleUrls,
 } from './runtime-context.js';
 
 // Config schema (design Decision 6). The Node-only `loadConfig` loader is intentionally NOT
@@ -20,8 +21,17 @@ export {
   telemetryConfigSchema,
   telemetryExporterSchema,
   corsConfigSchema,
+  listenConfigSchema,
+  directIngressSchema,
+  serveIngressSchema,
 } from './config.js';
-export type { TelemetryExporter, GithubConfig } from './config.js';
+export type {
+  TelemetryExporter,
+  GithubConfig,
+  ListenConfig,
+  DirectIngressConfig,
+  ServeIngressConfig,
+} from './config.js';
 
 // Repo-clone-browse slice contracts (design Decisions 5–8).
 export {
