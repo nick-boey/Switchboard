@@ -17,7 +17,6 @@ import { ReposFlow } from '../repos/ReposFlow';
 import { WorktreesHub } from '../worktrees/WorktreesHub';
 import { Plug } from '../ui/plug';
 import { Card } from '../ui/surface';
-import { SectionTitle } from '../ui/typography';
 
 /**
  * House responsive breakpoint (task 8.6): below it the navigation is an off-canvas drawer reached
@@ -71,14 +70,15 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
               opened={navOpened}
               onClick={toggleNav}
               hiddenFrom={LAYOUT_BREAKPOINT}
-              size="sm"
+              size="xs"
               aria-label="Toggle navigation"
               data-testid="nav-burger"
             />
-            <Plug status="running" size={18} label="Operator line" data-testid="brand-mark" />
+            <Plug status="running" size={12} label="Operator line" data-testid="brand-mark" />
             <Title
               order={1}
-              fz="h4"
+              fz="xs"
+              fw="normal"
               style={{ letterSpacing: tokens.wordmarkTracking, textTransform: 'uppercase' }}
             >
               Switchboard
@@ -90,16 +90,13 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
               size={12}
               label={`${liveSessions} live sessions`}
             />
-            <Text fz="xs" fw={600}>
-              {liveSessions} live
-            </Text>
+            <Text fz="xs">{liveSessions}</Text>
           </Group>
         </Group>
       </MantineAppShell.Header>
 
       <MantineAppShell.Navbar p="md" data-testid="nav-rail">
         <Stack gap="xs">
-          <SectionTitle>Lines</SectionTitle>
           <UnstyledButton
             data-testid="nav-worktrees"
             onClick={() => setView('worktrees')}
