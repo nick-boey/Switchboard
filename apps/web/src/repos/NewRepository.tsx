@@ -6,7 +6,6 @@ import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import { Button, AutocompleteSelector, SegmentedToggle, TextField } from '../ui/controls';
 import { StatusLight } from '../ui/lamp';
 import { Card } from '../ui/surface';
-import { SectionTitle } from '../ui/typography';
 import {
   cloneTargetFromSelection,
   cloneTargetFromUrl,
@@ -304,7 +303,6 @@ export function NewRepositoryView({
           )}
         </Stack>
       )}
-      <SectionTitle>Local source is disabled for the MVP</SectionTitle>
     </Stack>
   );
 }

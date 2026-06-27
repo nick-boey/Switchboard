@@ -46,8 +46,7 @@ export function SectionTitle({ children, ...rest }: TypeProps) {
       component="div"
       data-sb-section-title=""
       tt="uppercase"
-      fz="sm"
-      fw={700}
+      fz="xs"
       c="dimmed"
       style={{ letterSpacing: '0.14em' }}
       {...rest}
