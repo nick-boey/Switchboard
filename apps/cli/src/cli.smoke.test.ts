@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -188,6 +188,41 @@ describe('packaged switchboard CLI (built bin)', () => {
       } finally {
         await terminate(child);
         rmSync(home, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'writes workspace data (operations/) under ~/.switchboard, never the working directory',
+    async () => {
+      // Regression for the workspace-root pollution bug: repos/, operations/, and `.github-token`
+      // are derived from `ctx.workspaceRoot`, which must be the CONFIG DIR (`~/.switchboard`) — not
+      // `process.cwd()`. The operations ledger `mkdir`s its root at startup, so booting from a
+      // throwaway CWD is enough to prove the artifact lands under HOME/.switchboard, not the CWD.
+      const home = mkdtempSync(join(tmpdir(), 'switchboard-cli-smoke-home-'));
+      const cwd = mkdtempSync(join(tmpdir(), 'switchboard-cli-smoke-cwd-'));
+      const child = spawn(process.execPath, [BIN, 'start'], {
+        cwd,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, HOME: home },
+      });
+      let stderr = '';
+      child.stderr?.on('data', (chunk) => (stderr += String(chunk)));
+
+      try {
+        await waitForUrl(child, () => stderr);
+        // The startup ledger lives under the config dir…
+        expect(existsSync(join(home, '.switchboard', 'operations')), `stderr:\n${stderr}`).toBe(
+          true,
+        );
+        // …and nothing was scattered into the (unrelated) working directory.
+        expect(existsSync(join(cwd, 'operations'))).toBe(false);
+        expect(existsSync(join(cwd, '.github-token'))).toBe(false);
+      } finally {
+        await terminate(child);
+        rmSync(home, { recursive: true, force: true });
+        rmSync(cwd, { recursive: true, force: true });
       }
     },
     TEST_TIMEOUT_MS,
