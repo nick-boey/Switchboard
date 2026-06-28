@@ -4,6 +4,7 @@ import type { RepoTarget } from '@switchboard/shared';
 import { resolvedScheme, schemeTest, VIEWPORTS } from '../storybook/scheme-test';
 import type { SwitchboardClient } from '../api/client';
 import { repoAnchorId } from '../repos/group-repos';
+import { RoutedApp } from '../router/story-router';
 import { AppShell } from './AppShell';
 
 /**
@@ -32,16 +33,18 @@ const TWO_ORGS: RepoTarget[] = [
 ];
 
 /**
- * The flat app shell (repos-home-and-sidebar). Rendered through the global `AppProviders` decorator
- * (Mantine theme + TanStack Query); without an injected server config the cloned-repositories query
- * stays loading, so the home shows its loading affordance and the sidebar shows only "New
- * repository". The play functions assert dark-scheme resolution and the responsive drawer↔rail
- * switch with no horizontal overflow.
+ * The application shell as the **root-route layout**, mounted through the router (`RoutedApp`,
+ * memory history) and the global `AppProviders` decorator (Mantine + TanStack Query). Without an
+ * injected server config the cloned-repositories query stays loading, so the home shows its loading
+ * affordance and the sidebar shows only "New repository". The play functions assert dark-scheme
+ * resolution, the responsive drawer↔rail switch, and the URL-driven deep-link scroll + empty CTA —
+ * all *in-app* outcomes (memory history); the address bar / Back-Forward are Playwright's (design).
  */
 const meta = {
   title: 'Foundations/AppShell',
   component: AppShell,
   args: { liveSessions: 2 },
+  render: (args) => <RoutedApp path="/" client={args.client} liveSessions={args.liveSessions} />,
 } satisfies Meta<typeof AppShell>;
 
 export default meta;
@@ -79,10 +82,11 @@ export const Desktop: Story = {
 };
 
 /**
- * Deep-link mount-then-scroll (task 5.1a): activating a sidebar repo link from the new-repository
- * view makes the home active and scrolls that repository's section into view. The play function
- * installs an in-browser `scrollIntoView` spy (task 1.1) and asserts it fired for the target
- * section's element — proving the scroll happens after the section mounts on the switched-to view.
+ * Deep-link mount-then-scroll (design D4/D7): activating a sidebar repo `Link` from the
+ * new-repository page navigates to `/<owner>/<repo>`, which mounts the home and scrolls that
+ * repository's section into view. The play function installs an in-browser `scrollIntoView` spy and
+ * asserts it fired for the target section's element — proving the scroll happens after the section
+ * mounts on the navigated-to route (a URL-driven scroll, not a click-held `useState`).
  */
 export const DeepLinkScroll: Story = {
   parameters: schemeTest({ viewport: VIEWPORTS.desktop }),
@@ -93,7 +97,7 @@ export const DeepLinkScroll: Story = {
     await waitFor(() => canvas.getByTestId('nav-repo:nick-boey/switchboard'));
     const scrollSpy = spyOn(Element.prototype, 'scrollIntoView');
     try {
-      // Activate from a NON-home view (mount-then-scroll): open New repository first…
+      // Navigate to a NON-home route first (mount-then-scroll): open New repository…
       await userEvent.click(canvas.getByTestId('nav-new-repository'));
       // …then activate the repo deep-link; the home must mount and the section scroll into view.
       await userEvent.click(canvas.getByTestId('nav-repo:nick-boey/switchboard'));
@@ -111,8 +115,8 @@ export const DeepLinkScroll: Story = {
 };
 
 /**
- * Empty-home clone CTA (task 5.1b): with no repositories cloned, activating the home's
- * "Clone a repository" CTA moves the app to the new-repository view (the empty home is left behind).
+ * Empty-home clone CTA: with no repositories cloned, activating the home's "Clone a repository" CTA
+ * navigates to the new-repository page (the empty home is left behind).
  */
 export const EmptyHomeCloneCta: Story = {
   parameters: schemeTest({ viewport: VIEWPORTS.desktop }),

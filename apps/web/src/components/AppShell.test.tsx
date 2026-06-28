@@ -1,26 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { composeStories, setProjectAnnotations } from '@storybook/react-vite';
-import previewAnnotations from '../../.storybook/preview';
-import * as stories from './AppShell.stories';
+import { createMemoryHistory } from '@tanstack/react-router';
+import { createAppRouter } from '../router/routes';
+import { renderWithRouter, seededClonedReposClient, stubClient } from '../router/test-router';
 
 /**
- * Flat app-shell chrome (repos-home-and-sidebar). We render the COMPOSED story (real providers via
- * the global preview decorator) to static markup and assert the persistent chrome — tracked
- * wordmark, brand plug, burger, live-session count — plus the new home wiring: the navbar renders
- * `ReposNav` and the main region renders the repositories home (which, with no fetch resolved under
- * static rendering, shows its loading affordance). The retired "Line status" card must be gone. The
- * responsive drawer↔rail behaviour and dark resolution are asserted in the browser by the
- * Mobile / Desktop / Dark stories under the test-runner; the populated home / sidebar and the
- * deep-link scroll are covered by the `ReposHomeView` / `ReposNav` stories and the interaction test.
+ * `AppShell` is now the **root-route layout** (design D2), so it can no longer render standalone —
+ * its `<Outlet/>` and the sidebar `<Link>`s need a loaded router. We mount the app router at `/`
+ * via the harness (which loads before static markup) and assert the persistent chrome — tracked
+ * wordmark, brand plug, burger, live-session count — plus the navbar's `ReposNav` and the main
+ * region's repositories home (empty CTA, from the seeded empty `['cloned-repos']` list). The retired
+ * "Line status" card and old "Worktrees" nav entry must be gone. The responsive drawer↔rail and dark
+ * resolution are asserted in the browser by the Mobile / Desktop / Dark stories under the test-runner.
  */
-setProjectAnnotations(previewAnnotations);
+function appHtmlAt(path: string, liveSessions = 0): Promise<string> {
+  const router = createAppRouter({
+    context: { client: stubClient(), liveSessions },
+    history: createMemoryHistory({ initialEntries: [path] }),
+  });
+  return renderWithRouter(router, { queryClient: seededClonedReposClient([]) });
+}
 
-const { Default } = composeStories(stories);
-
-describe('AppShell flat header', () => {
-  it('renders the persistent chrome with the repositories home and ReposNav', () => {
-    const html = renderToStaticMarkup(<Default />);
+describe('AppShell root layout', () => {
+  it('renders the persistent chrome with the repositories home and ReposNav', async () => {
+    const html = await appHtmlAt('/');
     expect(html).toContain('data-testid="app-shell"');
     expect(html).toContain('Switchboard');
     expect(html).toContain('data-testid="nav-burger"');
@@ -30,15 +32,15 @@ describe('AppShell flat header', () => {
     expect(html).toContain('data-testid="nav-rail"');
     expect(html).toContain('data-testid="repos-nav"');
     expect(html).toContain('data-testid="nav-new-repository"');
-    // Main region renders the repositories home (initial loading affordance under static render).
-    expect(html).toContain('data-testid="repos-home-loading"');
+    // Main region renders the repositories home (empty list → clone CTA).
+    expect(html).toContain('data-testid="repos-home-empty"');
     // The retired "Line status" card is gone, and so is the old "Worktrees" nav entry.
     expect(html).not.toContain('data-testid="line-status"');
     expect(html).not.toContain('data-testid="nav-worktrees"');
   });
 
-  it('shows the live session count', () => {
-    const html = renderToStaticMarkup(<Default liveSessions={3} />);
+  it('shows the live session count from the router context', async () => {
+    const html = await appHtmlAt('/', 3);
     expect(html).toContain('3 live');
   });
 });
