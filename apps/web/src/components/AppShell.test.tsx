@@ -1,32 +1,38 @@
 import { describe, it, expect } from 'vitest';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient } from '@tanstack/react-query';
-import { composeStories, setProjectAnnotations } from '@storybook/react-vite';
-import previewAnnotations from '../../.storybook/preview';
+import { createMemoryHistory } from '@tanstack/react-router';
 import type { RepoTarget } from '@switchboard/shared';
 import type { SwitchboardClient } from '../api/client';
-import { AppProviders } from '../providers/AppProviders';
 import { sessionLivenessQueryKey } from '../sessions/session-queries';
 import { AppShell } from './AppShell';
-import * as stories from './AppShell.stories';
+import { createAppRouter } from '../router/routes';
+import {
+  renderWithRouter,
+  seededClonedReposClient,
+  stubClient,
+  stubLinkRouter,
+} from '../router/test-router';
 
 /**
- * Flat app-shell chrome (repos-home-and-sidebar). We render the COMPOSED story (real providers via
- * the global preview decorator) to static markup and assert the persistent chrome — tracked
- * wordmark, brand plug, burger, live-session count — plus the new home wiring: the navbar renders
- * `ReposNav` and the main region renders the repositories home (which, with no fetch resolved under
- * static rendering, shows its loading affordance). The retired "Line status" card must be gone. The
- * responsive drawer↔rail behaviour and dark resolution are asserted in the browser by the
- * Mobile / Desktop / Dark stories under the test-runner; the populated home / sidebar and the
- * deep-link scroll are covered by the `ReposHomeView` / `ReposNav` stories and the interaction test.
+ * `AppShell` is now the **root-route layout** (design D2), so it can no longer render standalone —
+ * its `<Outlet/>` and the sidebar `<Link>`s need a loaded router. We mount the app router at `/`
+ * via the harness (which loads before static markup) and assert the persistent chrome — tracked
+ * wordmark, brand plug, burger, live-session count — plus the navbar's `ReposNav` and the main
+ * region's repositories home (empty CTA, from the seeded empty `['cloned-repos']` list). The retired
+ * "Line status" card and old "Worktrees" nav entry must be gone. The responsive drawer↔rail and dark
+ * resolution are asserted in the browser by the Mobile / Desktop / Dark stories under the test-runner.
  */
-setProjectAnnotations(previewAnnotations);
+function appHtmlAt(path: string, liveSessions = 0): Promise<string> {
+  const router = createAppRouter({
+    context: { client: stubClient(), liveSessions },
+    history: createMemoryHistory({ initialEntries: [path] }),
+  });
+  return renderWithRouter(router, { queryClient: seededClonedReposClient([]) });
+}
 
-const { Default } = composeStories(stories);
-
-describe('AppShell flat header', () => {
-  it('renders the persistent chrome with the repositories home and ReposNav', () => {
-    const html = renderToStaticMarkup(<Default />);
+describe('AppShell root layout', () => {
+  it('renders the persistent chrome with the repositories home and ReposNav', async () => {
+    const html = await appHtmlAt('/');
     expect(html).toContain('data-testid="app-shell"');
     expect(html).toContain('Switchboard');
     expect(html).toContain('data-testid="nav-burger"');
@@ -36,15 +42,15 @@ describe('AppShell flat header', () => {
     expect(html).toContain('data-testid="nav-rail"');
     expect(html).toContain('data-testid="repos-nav"');
     expect(html).toContain('data-testid="nav-new-repository"');
-    // Main region renders the repositories home (initial loading affordance under static render).
-    expect(html).toContain('data-testid="repos-home-loading"');
+    // Main region renders the repositories home (empty list → clone CTA).
+    expect(html).toContain('data-testid="repos-home-empty"');
     // The retired "Line status" card is gone, and so is the old "Worktrees" nav entry.
     expect(html).not.toContain('data-testid="line-status"');
     expect(html).not.toContain('data-testid="nav-worktrees"');
   });
 
-  it('shows the live session count', () => {
-    const html = renderToStaticMarkup(<Default liveSessions={3} />);
+  it('shows the live session count from the router context', async () => {
+    const html = await appHtmlAt('/', 3);
     expect(html).toContain('3 live');
   });
 });
@@ -54,8 +60,9 @@ describe('AppShell flat header', () => {
  * injected `liveSessions` prop, the header must reflect the AGGREGATE of every cloned repository's
  * live sessions — not the old hardcoded `0`. We seed the shared TanStack Query cache (the
  * `['cloned-repos']` list and each repo's `sessionLivenessQueryKey` set) so the server render
- * resolves the queries synchronously, then assert the rendered count. The injected `client` is
- * never called — the cache is pre-seeded.
+ * resolves the queries synchronously, then assert the rendered count. `stubLinkRouter` mounts the
+ * shell in isolation — its sidebar `<Link>`s resolve and its `<Outlet/>` renders nothing — so the
+ * header count is asserted without the home, and the injected `client` is never called.
  */
 describe('AppShell header live-session count (derived)', () => {
   const REPOS: RepoTarget[] = [
@@ -65,7 +72,9 @@ describe('AppShell header live-session count (derived)', () => {
   const fakeClient = {} as SwitchboardClient;
 
   function seededClient(live: Record<string, Set<string>>): QueryClient {
-    const qc = new QueryClient();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
     qc.setQueryData(['cloned-repos'], { repos: REPOS });
     for (const [repoId, set] of Object.entries(live)) {
       qc.setQueryData(sessionLivenessQueryKey(repoId), set);
@@ -73,16 +82,15 @@ describe('AppShell header live-session count (derived)', () => {
     return qc;
   }
 
-  it('reflects the aggregate live-session count across repositories, not a hardcoded 0', () => {
+  it('reflects the aggregate live-session count across repositories, not a hardcoded 0', async () => {
     const qc = seededClient({
       'acme/infra': new Set(['a--0123456789ab', 'b--abcdef012345']),
       'nick-boey/switchboard': new Set(['c--1']),
     });
-    const html = renderToStaticMarkup(
-      <AppProviders queryClient={qc}>
-        <AppShell client={fakeClient} />
-      </AppProviders>,
-    );
+    // No `liveSessions` prop → the shell derives the count from the seeded per-repo liveness.
+    const html = await renderWithRouter(stubLinkRouter(<AppShell client={fakeClient} />), {
+      queryClient: qc,
+    });
     expect(html).toContain('data-testid="live-session-count"');
     expect(html).toContain('3 live sessions');
     expect(html).not.toContain('0 live sessions');

@@ -8,14 +8,13 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { Outlet } from '@tanstack/react-router';
+import { useMemo } from 'react';
 import type { RepoTarget } from '@switchboard/shared';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import type { SwitchboardTokens } from '../theme/theme';
-import { ReposFlow } from '../repos/ReposFlow';
-import { ReposHome } from '../repos/ReposHome';
 import { ReposNav } from '../repos/ReposNav';
-import { groupReposByOrg, repoAnchorId } from '../repos/group-repos';
+import { groupReposByOrg } from '../repos/group-repos';
 import { useLiveSessionCount } from '../sessions';
 import { Plug } from '../ui/plug';
 
@@ -37,24 +36,22 @@ export interface AppShellProps {
 }
 
 /**
- * The flat application shell (repos-home-and-sidebar). A flat header — brand plug + tracked
- * wordmark, a live-session count, and a burger that opens the nav drawer below the breakpoint —
- * over the per-organisation repositories navigation (`ReposNav`) and a main region that shows the
- * aggregated repositories home (`ReposHome`) or the new-repository clone flow. Navigation is
- * `useState`-based: a sidebar repo link sets the home view and a pending scroll target, and a
- * mount-then-scroll effect brings that repository's section into view once it has mounted.
+ * The application shell — the **root route's layout** (design D2). A flat header — brand plug +
+ * tracked wordmark, a live-session count, and a burger that opens the nav drawer below the
+ * breakpoint — over the per-organisation repositories navigation (`ReposNav`, whose links are typed
+ * router `Link`s) and a main region that renders the matched route via `<Outlet />`. Navigation is
+ * URL-driven: the sidebar and the deep-link / reload paths all set the page through the router, so
+ * the shell holds no `view` state — it only fetches the shared `['cloned-repos']` list for the rail.
  */
 export function AppShell({ client: injectedClient, liveSessions }: AppShellProps) {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(false);
-  const [view, setView] = useState<'home' | 'new-repo'>('home');
-  const [pendingScrollAnchor, setPendingScrollAnchor] = useState<string | null>(null);
   const theme = useMantineTheme();
   const tokens = theme.other as SwitchboardTokens;
 
   const client = useMemo(() => injectedClient ?? createSwitchboardClient(), [injectedClient]);
 
   // Shared `['cloned-repos']` query key across the sidebar and the home, so the list is fetched
-  // once and the two surfaces stay consistent. The sidebar renders repository buttons only from a
+  // once and the two surfaces stay consistent. The sidebar renders repository links only from a
   // successfully resolved list, so a loading or failed list shows the "New repository"-only rail.
   const cloned = useQuery({
     queryKey: ['cloned-repos'],
@@ -73,23 +70,6 @@ export function AppShell({ client: injectedClient, liveSessions }: AppShellProps
   // injected count never triggers session polling.
   const derivedLiveSessions = useLiveSessionCount(client, liveSessions === undefined ? repos : []);
   const liveSessionCount = liveSessions ?? derivedLiveSessions;
-
-  const openNewRepository = (): void => setView('new-repo');
-  const selectRepo = (target: RepoTarget): void => {
-    setView('home');
-    setPendingScrollAnchor(repoAnchorId(target));
-  };
-
-  // Mount-then-scroll for cross-view activation: scroll only once the target section has mounted
-  // (guarding on the element being present), then clear the pending id. Re-runs when the list data
-  // arrives so a section that mounts after the click is still reached.
-  useEffect(() => {
-    if (!pendingScrollAnchor) return;
-    const el = document.getElementById(pendingScrollAnchor);
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setPendingScrollAnchor(null);
-  }, [pendingScrollAnchor, cloned.data]);
 
   return (
     <MantineAppShell
@@ -131,19 +111,11 @@ export function AppShell({ client: injectedClient, liveSessions }: AppShellProps
       </MantineAppShell.Header>
 
       <MantineAppShell.Navbar p="md" data-testid="nav-rail">
-        <ReposNav
-          groups={navGroups}
-          onSelectRepo={selectRepo}
-          onNewRepository={openNewRepository}
-        />
+        <ReposNav groups={navGroups} />
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
-        {view === 'new-repo' ? (
-          <ReposFlow client={client} />
-        ) : (
-          <ReposHome client={client} onNewRepository={openNewRepository} />
-        )}
+        <Outlet />
       </MantineAppShell.Main>
     </MantineAppShell>
   );

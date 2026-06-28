@@ -2,10 +2,12 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { QueryClient } from '@tanstack/react-query';
+import { RouterProvider } from '@tanstack/react-router';
 import type { RepoTarget } from '@switchboard/shared';
 import type { SwitchboardClient } from '../api/client';
 import { AppProviders } from '../providers/AppProviders';
 import { sessionLivenessQueryKey } from '../sessions/session-queries';
+import { stubLinkRouter } from '../router/test-router';
 import { AppShell } from './AppShell';
 
 /**
@@ -60,12 +62,15 @@ describe('AppShell header live-session count — mounted self-correction', () =>
     qc.setQueryData(sessionLivenessQueryKey('acme/infra'), new Set(['a--1', 'b--2']));
     qc.setQueryData(sessionLivenessQueryKey('nick-boey/switchboard'), new Set(['c--3']));
 
-    const { getByTestId } = render(
+    // `AppShell` is now the root-route layout, so it can't mount standalone — `stubLinkRouter` mounts
+    // it in isolation (sidebar `<Link>`s resolve, `<Outlet/>` renders nothing) while keeping the live
+    // DOM + the shared `QueryClient` the self-correction assertions below depend on.
+    const { findByTestId } = render(
       <AppProviders queryClient={qc}>
-        <AppShell client={{} as SwitchboardClient} />
+        <RouterProvider router={stubLinkRouter(<AppShell client={{} as SwitchboardClient} />)} />
       </AppProviders>,
     );
-    const counter = getByTestId('live-session-count');
+    const counter = await findByTestId('live-session-count');
 
     // Initial mount: 3 live across both repos, indicator on.
     await waitFor(() => expect(counter.textContent).toBe('3'));
