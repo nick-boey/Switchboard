@@ -3,11 +3,13 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { idForBranch } from '@switchboard/shared';
@@ -38,6 +40,28 @@ describe('worktree Git service', () => {
     execFileSync('git', ['-C', wtPath, 'rev-parse', '--abbrev-ref', 'HEAD'], {
       encoding: 'utf8',
     }).trim();
+  const headOf = (gitArgs: string[]): string =>
+    execFileSync('git', [...gitArgs, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const bareRev = (ref: string): string =>
+    execFileSync('git', ['--git-dir', fx.bareDir, 'rev-parse', ref], { encoding: 'utf8' }).trim();
+  // Move the LOCAL `refs/heads/<branch>` forward with a commit that exists only locally (never on
+  // the remote), via a throwaway worktree — so the local branch diverges from origin/<branch>.
+  const addLocalOnlyCommit = (branch: string): string => {
+    const tmp = mkdtempSync(join(tmpdir(), 'sb-local-'));
+    execFileSync('git', ['--git-dir', fx.bareDir, 'worktree', 'add', '--quiet', tmp, branch]);
+    execFileSync('git', [
+      '-C',
+      tmp,
+      'commit',
+      '--allow-empty',
+      '--quiet',
+      '--message',
+      `local-only on ${branch}`,
+    ]);
+    const sha = headOf(['-C', tmp]);
+    execFileSync('git', ['--git-dir', fx.bareDir, 'worktree', 'remove', '--force', tmp]);
+    return sha;
+  };
   const branchExists = (branch: string): boolean => {
     const out = execFileSync(
       'git',
@@ -99,6 +123,163 @@ describe('worktree Git service', () => {
       encoding: 'utf8',
     }).trim();
     expect(wtHead).toBe(mainHead);
+  });
+
+  it('builds the worktree from the up-to-date remote tip, not a stale local base (regression)', async () => {
+    // The remote advances AFTER the bare clone, so the local branch refs are now stale.
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote advances main');
+    const remoteMain = fx.remote.git('rev-parse', 'main');
+    fx.remote.git('checkout', '--quiet', fx.existingBranch);
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote advances feature');
+    const remoteFeature = fx.remote.git('rev-parse', fx.existingBranch);
+    fx.remote.git('checkout', '--quiet', 'main');
+
+    // mode 'new': the new branch must be cut from the refreshed base (origin/main), not stale local.
+    const created = await service.createWorktree({
+      target: fx.target,
+      branch: 'feature/off-fresh-base',
+      mode: 'new',
+    });
+    const newPath = join(worktreesDir(fx.ctx, fx.target), created.wtId);
+    expect(headOf(['-C', newPath])).toBe(remoteMain);
+
+    // mode 'existing-remote' (local branch already present): the checkout must land at the latest
+    // remote tip, not the stale local branch tip.
+    const existing = await service.createWorktree({
+      target: fx.target,
+      branch: fx.existingBranch,
+      mode: 'existing-remote',
+    });
+    const existingPath = join(worktreesDir(fx.ctx, fx.target), existing.wtId);
+    expect(headOf(['-C', existingPath])).toBe(remoteFeature);
+  });
+
+  it('preserves a divergent base when creating a new branch (fast-forward-only)', async () => {
+    // Local `main` gains a local-only commit; the remote advances main differently → diverged.
+    const localMain = addLocalOnlyCommit('main');
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote advances main');
+    const remoteMain = fx.remote.git('rev-parse', 'main');
+    expect(localMain).not.toBe(remoteMain);
+
+    const created = await service.createWorktree({
+      target: fx.target,
+      branch: 'feature/off-diverged-base',
+      mode: 'new',
+    });
+    const path = join(worktreesDir(fx.ctx, fx.target), created.wtId);
+    // FF-only: the base is NOT reset to the remote tip; the new branch is cut from the local base.
+    expect(headOf(['-C', path])).toBe(localMain);
+    expect(bareRev('main')).toBe(localMain); // local main kept its local-only commit
+    expect(bareRev('main')).not.toBe(remoteMain);
+  });
+
+  it('preserves a divergent existing-remote branch (checks out the local tip, not the remote)', async () => {
+    const localTip = addLocalOnlyCommit(fx.existingBranch);
+    fx.remote.git('checkout', '--quiet', fx.existingBranch);
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote advances feature');
+    const remoteTip = fx.remote.git('rev-parse', fx.existingBranch);
+    fx.remote.git('checkout', '--quiet', 'main');
+    expect(localTip).not.toBe(remoteTip);
+
+    const created = await service.createWorktree({
+      target: fx.target,
+      branch: fx.existingBranch,
+      mode: 'existing-remote',
+    });
+    const path = join(worktreesDir(fx.ctx, fx.target), created.wtId);
+    // The local-only commit is preserved: checkout is at the local tip, never reset to the remote.
+    expect(headOf(['-C', path])).toBe(localTip);
+    expect(headOf(['-C', path])).not.toBe(remoteTip);
+  });
+
+  it('still creates a worktree when the remote fetch fails (best-effort, no throw)', async () => {
+    // A runner whose `fetch` always fails simulates an unreachable remote / auth failure.
+    const real = createGitRunner();
+    const runner: GitRunner = {
+      run: (a, o) => real.run(a, o),
+      capture: (a, o) =>
+        a.includes('fetch') ? Promise.resolve({ code: 1, stdout: '' }) : real.capture(a, o),
+    };
+    const svc = createWorktreeService(fx.ctx, { gitService: fx.gitService, runner });
+    // The remote advances, but with the fetch broken the worktree must still build from the local base.
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote advances main');
+    const localMain = headOf(['--git-dir', fx.bareDir]);
+
+    const created = await svc.createWorktree({
+      target: fx.target,
+      branch: 'feature/offline',
+      mode: 'new',
+    });
+    const path = join(worktreesDir(fx.ctx, fx.target), created.wtId);
+    expect(existsSync(join(path, '.git'))).toBe(true);
+    expect(headOf(['-C', path])).toBe(localMain); // stale local base, not the (unreachable) remote tip
+  });
+
+  it('updateBranchFromRemote fast-forwards a behind branch and is a no-op on divergence (callable directly)', async () => {
+    // Behind: the remote advances, the local branch can fast-forward → the local ref advances.
+    fx.remote.git('checkout', '--quiet', fx.existingBranch);
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote advances feature');
+    const remoteTip = fx.remote.git('rev-parse', fx.existingBranch);
+    fx.remote.git('checkout', '--quiet', 'main');
+
+    const ff = await service.updateBranchFromRemote(fx.target, fx.existingBranch);
+    expect(ff).toBe(true);
+    expect(bareRev(fx.existingBranch)).toBe(remoteTip); // local branch fast-forwarded to the remote
+
+    // Divergence: a local-only commit + a different remote tip → FF refused, local ref untouched.
+    const localTip = addLocalOnlyCommit(fx.existingBranch);
+    fx.remote.git('checkout', '--quiet', fx.existingBranch);
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote diverges feature');
+    fx.remote.git('checkout', '--quiet', 'main');
+
+    const diverged = await service.updateBranchFromRemote(fx.target, fx.existingBranch);
+    expect(diverged).toBe(false);
+    expect(bareRev(fx.existingBranch)).toBe(localTip); // local-only commit preserved
+  });
+
+  it('does not leak the branch name into telemetry when refreshing on create', async () => {
+    const branch = 'feature/secret-branch-name';
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote advances main');
+    await service.createWorktree({ target: fx.target, branch, mode: 'new' });
+    // The branch (whose slug echoes it) must not appear in any captured span name or attribute.
+    expect(fx.telemetry.containsSecret(branch)).toBe(false);
+  });
+
+  it('cuts a new branch from the up-to-date remote base even when the base is checked out elsewhere', async () => {
+    // Occupy `main` in a linked worktree so its local ref can no longer be fast-forwarded by a fetch.
+    const occupied = mkdtempSync(join(tmpdir(), 'sb-busy-base-'));
+    execFileSync('git', ['--git-dir', fx.bareDir, 'worktree', 'add', '--quiet', occupied, 'main']);
+    const localMainBefore = bareRev('main');
+    // The remote advances main.
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote advances main');
+    const remoteMain = fx.remote.git('rev-parse', 'main');
+    expect(remoteMain).not.toBe(localMainBefore);
+
+    const created = await service.createWorktree({
+      target: fx.target,
+      branch: 'feature/off-busy-base',
+      mode: 'new',
+    });
+    const path = join(worktreesDir(fx.ctx, fx.target), created.wtId);
+    // The new branch is cut from the fresh remote tip (origin/main), not the still-stale local main.
+    expect(headOf(['-C', path])).toBe(remoteMain);
+    // The checked-out local main was never force-moved, so its own worktree stays consistent.
+    expect(bareRev('main')).toBe(localMainBefore);
+
+    execFileSync('git', ['--git-dir', fx.bareDir, 'worktree', 'remove', '--force', occupied]);
+  });
+
+  it('updateBranchFromRemote also advances the remote-tracking ref (origin/<branch>)', async () => {
+    fx.remote.git('checkout', '--quiet', fx.existingBranch);
+    fx.remote.git('commit', '--allow-empty', '--quiet', '--message', 'remote advances feature');
+    const remoteTip = fx.remote.git('rev-parse', fx.existingBranch);
+    fx.remote.git('checkout', '--quiet', 'main');
+
+    const ok = await service.updateBranchFromRemote(fx.target, fx.existingBranch);
+    expect(ok).toBe(true);
+    expect(bareRev(fx.existingBranch)).toBe(remoteTip); // local branch fast-forwarded
+    // The upstream tracking ref is refreshed too, so later ahead/behind stays correct.
+    expect(bareRev(`refs/remotes/origin/${fx.existingBranch}`)).toBe(remoteTip);
   });
 
   it('requires a completed bare clone', async () => {
