@@ -93,14 +93,15 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
               opened={navOpened}
               onClick={toggleNav}
               hiddenFrom={LAYOUT_BREAKPOINT}
-              size="sm"
+              size="xs"
               aria-label="Toggle navigation"
               data-testid="nav-burger"
             />
-            <Plug status="running" size={18} label="Operator line" data-testid="brand-mark" />
+            <Plug status="running" size={12} label="Operator line" data-testid="brand-mark" />
             <Title
               order={1}
-              fz="h4"
+              fz="xs"
+              fw="normal"
               style={{ letterSpacing: tokens.wordmarkTracking, textTransform: 'uppercase' }}
             >
               Switchboard
@@ -112,9 +113,7 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
               size={12}
               label={`${liveSessions} live sessions`}
             />
-            <Text fz="xs" fw={600}>
-              {liveSessions} live
-            </Text>
+            <Text fz="xs">{liveSessions}</Text>
           </Group>
         </Group>
       </MantineAppShell.Header>

@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `just install` — install workspace deps (pnpm 11, Node >=26)
 - `just build` — build every package (tsc for shared/server, tsup for cli, vite for web)
+- `just run` — run the full stack locally: API server (loopback, against the real `~/.switchboard`) + web UI (`localhost:5173`). Reads the server's URL + bearer token from `~/.switchboard`. Ctrl-C stops both. Web hot-reloads; server runs from `dist`, so server-code changes need a restart.
 - `just test` — unit tests (Vitest). No build needed first (see Testing).
 - `just e2e` — Playwright E2E. **Requires `just build` first** (resolves built packages).
 - `just lint` — ESLint flat config + `prettier --check .`

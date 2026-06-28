@@ -82,9 +82,8 @@ export function Card({
           data-sb-title=""
           tt="uppercase"
           fz="xs"
-          fw={700}
           mb="sm"
-          style={{ letterSpacing: '0.08em', opacity: 0.75 }}
+          style={{ letterSpacing: '0.2em', opacity: 0.75 }}
         >
           {title}
         </Text>

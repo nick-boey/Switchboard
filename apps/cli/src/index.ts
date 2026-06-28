@@ -66,9 +66,11 @@ const telemetry: RuntimeTelemetry = {
  * gives up after repeated crashes).
  */
 async function runStart(): Promise<number> {
-  const { config, assertNoHostPublication } = bootstrap();
+  const { config, configDir, assertNoHostPublication } = bootstrap();
   const ctx: RuntimeContext = {
-    workspaceRoot: process.cwd(),
+    // The runtime's workspace IS its config dir (`~/.switchboard`): repos/, operations/, and the
+    // `.github-token` all live alongside config.json there — never the process CWD.
+    workspaceRoot: configDir,
     config,
     logger,
     telemetry,
@@ -104,7 +106,9 @@ async function runDocker(): Promise<number> {
     listen: { direct: config.listen.direct ?? { port: 0 }, serve: { port: servePort } },
   };
   const ctx: RuntimeContext = {
-    workspaceRoot: process.cwd(),
+    // Workspace == config dir (`/root/.switchboard`, the mounted volume) so repos/ + operations/
+    // persist across container restarts — not the ephemeral WORKDIR.
+    workspaceRoot: configDir,
     config: dockerConfig,
     logger,
     telemetry,
