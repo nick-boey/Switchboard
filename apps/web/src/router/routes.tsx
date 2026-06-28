@@ -21,11 +21,13 @@ import { repoAnchorId } from '../repos/group-repos';
  * persist, `<Outlet/>` renders the page); the index `/` and `/$owner/$repo` both render the same
  * aggregated `ReposHome`, the latter scrolling to the addressed repo's section; `/new-repo` renders
  * the clone flow. Injection (`client`/`liveSessions`) is threaded through the router context (D3),
- * not props, because the router instantiates the root component.
+ * not props, because the router instantiates the root component. `liveSessions` is optional: when
+ * omitted (the production app) the shell derives the count from real per-repo liveness
+ * (fix-live-session-indicator); a number overrides it for Storybook/tests.
  */
 export interface RouterContext {
   client: SwitchboardClient;
-  liveSessions: number;
+  liveSessions?: number;
 }
 
 /** Read the root-injected context loosely from any descendant route component (design D3). */

@@ -15,6 +15,7 @@ import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
 import type { SwitchboardTokens } from '../theme/theme';
 import { ReposNav } from '../repos/ReposNav';
 import { groupReposByOrg } from '../repos/group-repos';
+import { useLiveSessionCount } from '../sessions';
 import { Plug } from '../ui/plug';
 
 /**
@@ -27,7 +28,10 @@ export const LAYOUT_BREAKPOINT = 'sm';
 export interface AppShellProps {
   /** Inject a typed client (Storybook / tests). The app builds one from runtime config. */
   client?: SwitchboardClient;
-  /** Live Claude session count shown in the header (display-only). */
+  /**
+   * Override the header live-session count (Storybook / tests). When omitted, the count is derived
+   * from real per-repo liveness across the cloned repositories.
+   */
   liveSessions?: number;
 }
 
@@ -39,7 +43,7 @@ export interface AppShellProps {
  * URL-driven: the sidebar and the deep-link / reload paths all set the page through the router, so
  * the shell holds no `view` state — it only fetches the shared `['cloned-repos']` list for the rail.
  */
-export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellProps) {
+export function AppShell({ client: injectedClient, liveSessions }: AppShellProps) {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(false);
   const theme = useMantineTheme();
   const tokens = theme.other as SwitchboardTokens;
@@ -57,7 +61,15 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
       return res.json();
     },
   });
-  const navGroups = cloned.isSuccess ? groupReposByOrg(cloned.data.repos) : [];
+  const repos = cloned.isSuccess ? cloned.data.repos : [];
+  const navGroups = groupReposByOrg(repos);
+
+  // Header live-session count: the aggregate of every cloned repo's live sessions (there is no
+  // global sessions endpoint). The `liveSessions` prop, when provided, overrides for Storybook/tests
+  // and is kept genuinely display-only — passing `[]` suppresses the per-repo liveness queries so an
+  // injected count never triggers session polling.
+  const derivedLiveSessions = useLiveSessionCount(client, liveSessions === undefined ? repos : []);
+  const liveSessionCount = liveSessions ?? derivedLiveSessions;
 
   return (
     <MantineAppShell
@@ -89,11 +101,11 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
           </Group>
           <Group gap={6} wrap="nowrap" data-testid="live-session-count">
             <Plug
-              status={liveSessions > 0 ? 'running' : 'off'}
+              status={liveSessionCount > 0 ? 'running' : 'off'}
               size={12}
-              label={`${liveSessions} live sessions`}
+              label={`${liveSessionCount} live sessions`}
             />
-            <Text fz="xs">{liveSessions}</Text>
+            <Text fz="xs">{liveSessionCount}</Text>
           </Group>
         </Group>
       </MantineAppShell.Header>
