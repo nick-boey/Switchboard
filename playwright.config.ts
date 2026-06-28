@@ -11,6 +11,7 @@ const PROTOTYPE_STORYBOOK_PORT = 6007;
 const DEDICATED_SPECS = [
   /app-shell\.spec\.ts/,
   /repos-home\.spec\.ts/,
+  /page-routing\.spec\.ts/,
   /storybook-prototypes\..*\.spec\.ts/,
   /repo-clone\.spec\.ts/,
   /worktree\.spec\.ts/,
@@ -59,6 +60,15 @@ export default defineConfig({
       // (no network).
       name: 'repos-home',
       testMatch: /repos-home\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
+    },
+    {
+      // The page-routing flow (web-navigation): clean-path routing end-to-end — address-bar
+      // updates, browser Back/Forward (incl. between repo anchors), and deep-link load + scroll +
+      // reload — against a real `start(ctx)` server, github.com clones redirected to local source
+      // repos (no network), served by the same `vite preview` webServer.
+      name: 'page-routing',
+      testMatch: /page-routing\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
     },
     {
