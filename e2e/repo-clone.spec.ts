@@ -30,6 +30,9 @@ let fake: FakeGitHub;
 let fakeServer: { url: string; close: () => Promise<void> };
 let uiServer: ServerHandle;
 let uiRoot: string;
+// A second server over a SEPARATE empty workspace (booted in beforeAll, off the test-time
+// contention) for the empty-home → clone → freshness regression.
+let emptyServer: ServerHandle;
 const savedEnv: Record<string, string | undefined> = {};
 
 /** Initialize a local source git repo (with one commit) at `path`. */
@@ -115,10 +118,12 @@ test.beforeAll(async () => {
 
   uiRoot = mkdtempSync(join(tmpdir(), 'rcb-ui-'));
   uiServer = await bootServer(uiRoot, true);
+  emptyServer = await bootServer(mkdtempSync(join(tmpdir(), 'rcb-empty-')), true);
 });
 
 test.afterAll(async () => {
   await uiServer?.close();
+  await emptyServer?.close();
   await fakeServer?.close();
   for (const [key, value] of Object.entries(savedEnv)) {
     if (value === undefined) delete process.env[key];
@@ -150,6 +155,42 @@ test('clones an organisation repository via the owner selector → ready', async
   await page.getByTestId('clone-button').click();
 
   await expect(page.getByTestId('repo-ready')).toBeVisible({ timeout: 20_000 });
+});
+
+test('a clone started from the empty home CTA appears in the home and sidebar without a reload', async ({
+  page,
+}) => {
+  // repos-home-and-sidebar impl-review regression (task 8.1): AppShell keeps the shared
+  // ['cloned-repos'] query mounted, so a completed clone must invalidate it — otherwise the new
+  // primary home/sidebar stay on the stale empty list and the just-cloned repo is unreachable
+  // without a reload. `emptyServer` is a SEPARATE empty workspace (booted in beforeAll) so the home
+  // starts on its empty clone CTA and nothing else clones into it.
+  await page.addInitScript(
+    (config) => {
+      (window as unknown as { __SWITCHBOARD_CONFIG__?: unknown }).__SWITCHBOARD_CONFIG__ = config;
+    },
+    { serverUrl: emptyServer.url, bearerToken: TOKEN },
+  );
+  await page.goto('/');
+  await expect(page.getByTestId('app-shell')).toBeVisible();
+
+  // The empty home's clone CTA opens the new-repository flow.
+  await page.getByTestId('repos-home-clone').click();
+  await expect(page.getByTestId('new-repository')).toBeVisible();
+  await expect(page.getByTestId('method-toggle')).toBeVisible();
+
+  // Clone an organisation repository.
+  await page.getByTestId('owner-input').fill('acme');
+  await page.getByTestId('repo-input').fill('widget-factory');
+  await page.keyboard.press('Escape'); // close the autocomplete dropdown
+  await page.getByTestId('clone-button').click();
+  await expect(page.getByTestId('repo-ready')).toBeVisible({ timeout: 20_000 });
+
+  // Without reloading, the new repository appears in the sidebar…
+  await expect(page.getByTestId('nav-repo:acme/widget-factory')).toBeVisible({ timeout: 20_000 });
+  // …and activating it reveals its section on the home.
+  await page.getByTestId('nav-repo:acme/widget-factory').click();
+  await expect(page.locator('[id="repo:acme/widget-factory"]')).toBeVisible();
 });
 
 test('clones a personal repository From URL with a .git suffix → ready', async ({ page }) => {

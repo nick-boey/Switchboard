@@ -10,6 +10,7 @@ const PROTOTYPE_STORYBOOK_PORT = 6007;
 // Specs owned by dedicated projects below — kept out of the headless `chromium` smoke project.
 const DEDICATED_SPECS = [
   /app-shell\.spec\.ts/,
+  /repos-home\.spec\.ts/,
   /storybook-prototypes\..*\.spec\.ts/,
   /repo-clone\.spec\.ts/,
   /worktree\.spec\.ts/,
@@ -50,6 +51,14 @@ export default defineConfig({
       // `start(ctx)` server, with github.com clones redirected to local source repos (no network).
       name: 'worktree',
       testMatch: /worktree\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
+    },
+    {
+      // The repositories-home flow (repos-home-and-sidebar): the aggregated home + per-org sidebar
+      // against a real `start(ctx)` server, with github.com clones redirected to local source repos
+      // (no network).
+      name: 'repos-home',
+      testMatch: /repos-home\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${PREVIEW_PORT}` },
     },
     {
