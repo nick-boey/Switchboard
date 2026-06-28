@@ -1,0 +1,75 @@
+name: CI
+
+# Build and test the whole monorepo on every push to main and every PR targeting it.
+# Mirrors the `just` recipes: install → build → typecheck → lint → unit (vitest) → e2e (playwright).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on a PR branch; never cancel a push to main.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Fast static gates that need no build: type-check across project references + ESLint + Prettier.
+  static:
+    name: Type-check & lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version comes from the `packageManager` field in package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26 # repo requires Node >=26 (see package.json engines)
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc -b # `just typecheck`
+      - run: pnpm exec eslint . # `just lint` (1/2)
+      - run: pnpm exec prettier --check . # `just lint` (2/2)
+
+  # Build every package, then run the Vitest unit suites across the workspace.
+  # The build is required because apps/cli unit tests exercise the built dist/index.js.
+  test:
+    name: Build & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build # `just build`
+      - run: pnpm exec vitest run # `just test`
+
+  # End-to-end Playwright suites. Requires a build first (resolves built packages) and the
+  # Chromium browser + its OS deps. Playwright's own webServer boots the vite preview and the
+  # prototype Storybook; specs fake the tmux/GitHub boundaries, so no network or real login is used.
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build # `just build` — e2e resolves the built packages
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Configure a git identity
+        # Backstops any app-driven git clone/commit in the repo-clone/worktree/session suites;
+        # CI runners have no global identity (the temp-git fixture only sets per-repo config).
+        run: |
+          git config --global user.email "ci@switchboard.local"
+          git config --global user.name "Switchboard CI"
+      - run: pnpm exec playwright test # `just e2e`
