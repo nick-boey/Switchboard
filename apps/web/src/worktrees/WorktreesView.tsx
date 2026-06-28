@@ -80,13 +80,11 @@ export function DeleteWorktreeControl({
 
 function WorktreeRow({
   wt,
-  divider,
   sessionStatus,
   onToggleSession,
   onRequestDelete,
 }: {
   wt: WorktreeSummary;
-  divider: boolean;
   sessionStatus: PlugSessionStatus;
   onToggleSession?: (wt: WorktreeSummary, status: PlugSessionStatus) => void;
   onRequestDelete: (wt: WorktreeSummary) => void;
@@ -97,7 +95,7 @@ function WorktreeRow({
       px="md"
       py="sm"
       data-testid={`wt-row-${wt.wtId}`}
-      style={{ borderTop: divider ? '1px solid var(--sb-divider)' : undefined }}
+      style={{ borderTop: '1px solid var(--sb-divider)' }}
     >
       <Text fz="sm" fw={700} ff="monospace" truncate>
         {wt.branch}
@@ -216,7 +214,7 @@ export function WorktreesView({
   return (
     <Card p={0} title={undefined} data-testid="worktrees-list">
       <Box px="md" pt="md" pb={worktrees.length ? 'xs' : 0}>
-        <Text fz="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
+        <Text fz="xs" tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
           {repoId}
         </Text>
         {worktrees.length === 0 && (
@@ -225,11 +223,10 @@ export function WorktreesView({
           </Text>
         )}
       </Box>
-      {worktrees.map((wt, i) => (
+      {worktrees.map((wt) => (
         <WorktreeRow
           key={wt.wtId}
           wt={wt}
-          divider={i > 0}
           sessionStatus={sessionStatusByWtId?.[wt.wtId] ?? 'off'}
           onToggleSession={onToggleSession}
           onRequestDelete={(w) => onRequestDelete?.(w)}
