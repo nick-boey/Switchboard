@@ -67,7 +67,13 @@ against the existing worktrees on disk (each worktree's branch recovered from gi
 as an existing worktree, the create MUST detect the collision and **reject** it with a typed
 collision error — it MUST NOT extend or otherwise mutate the identifier, and it MUST NOT alias two
 distinct branches onto one worktree path or tmux name. A repeat create for the **same** branch is
-the idempotent path, not a collision.
+the idempotent path, not a collision. Before building the checkout, the create MUST bring the
+branch the checkout will be based on up to date with the remote — the **base** branch for a new
+branch, or the **existing local branch** for a branch that already exists on the remote — by
+applying the fast-forward-only, best-effort branch refresh; a divergent local branch is left intact
+and an unreachable remote falls back to the existing local tip so the create still succeeds
+offline. (The path that creates a branch fresh from `origin/<branch>` when no local branch yet
+exists is already up to date by construction and needs no separate refresh.)
 
 #### Scenario: Worktree lands at the canonical path on a branch
 
@@ -75,16 +81,50 @@ the idempotent path, not a collision.
 - **THEN** a working tree exists at `~/.switchboard/repos/<owner>/<repo>/worktrees/<wt-id>` checked
   out on that branch, alongside (not replacing) the bare repository at `.bare`
 
-#### Scenario: Existing remote branch is checked out and tracked
+#### Scenario: A fast-forwardable existing remote branch is checked out at the latest remote tip and tracked
 
-- **WHEN** a worktree is created for a branch that already exists on the remote
-- **THEN** the worktree checks out that existing branch and is set to track the remote branch
+- **WHEN** a worktree is created for a branch that already exists on the remote and the local branch
+  can fast-forward to the fetched remote tip (it has no local-only commits)
+- **THEN** the worktree checks out that existing branch at the latest remote tip — the local branch
+  is fast-forwarded from `origin` before the checkout is built — and is set to track the remote
+  branch
+
+#### Scenario: A diverged existing remote branch checks out the unchanged local tip and tracks
+
+- **WHEN** a worktree is created for a branch that already exists on the remote but the local branch
+  has diverged — it holds commits not on the remote, so it cannot fast-forward
+- **THEN** the fast-forward-only refresh leaves the local branch unchanged, the worktree checks out
+  that local tip (it is never reset or rebased to the remote tip, so local-only commits are
+  preserved), the create does not fail, and the worktree is still set to track the remote branch
 
 #### Scenario: New branch is created from a base
 
 - **WHEN** a worktree is created requesting a new branch
-- **THEN** a new branch is created from the requested base (defaulting to the repository's default
-  branch) and checked out in the new worktree
+- **THEN** the base (defaulting to the repository's default branch) is first refreshed from
+  `origin`, then a new branch is created from that up-to-date base and checked out in the new
+  worktree, so the new branch starts from the latest remote tip of its base
+
+#### Scenario: A worktree is not created from a stale local base
+
+- **WHEN** the remote has advanced beyond the local copy of the branch (for an existing remote
+  branch) or of the base (for a new branch), and a worktree is created for it
+- **THEN** the worktree's checkout includes the latest remote commits and is not behind `origin`,
+  because the relevant branch was fetched and fast-forwarded before the worktree was built
+
+#### Scenario: A divergent base is preserved when creating a new branch
+
+- **WHEN** a new-branch worktree is created and the base branch has local-only commits not on the
+  remote (it has diverged), so it cannot fast-forward
+- **THEN** the fast-forward-only refresh leaves the base and its local-only commits unchanged, the
+  create does not fail, and the new branch is cut from that local base tip
+
+#### Scenario: Worktree creation still succeeds when the remote is unreachable
+
+- **WHEN** a worktree is created while the remote is unreachable, so refreshing the branch from
+  `origin` fails
+- **THEN** the create proceeds best-effort from the existing local branch tip rather than failing,
+  and the refresh attempt leaks no branch name, worktree id, absolute path, or git command argument
+  into telemetry or logs and never places the PAT in process arguments, the remote URL, or logs
 
 #### Scenario: Path safety is enforced before any path is constructed
 
@@ -398,4 +438,49 @@ for a remote fetch MUST be supplied only through the credential helper.
 - **WHEN** creating a worktree for an existing remote branch requires fetching from the remote
 - **THEN** the PAT is supplied only through the credential helper and does not appear in process
   arguments, the clone/remote URL, or logs
+
+### Requirement: Refresh a local branch from its remote, fast-forward-only and best-effort
+
+The system SHALL provide a reusable operation that brings a single local branch up to date with
+its remote by fetching `origin` and fast-forwarding the local branch ref to its remote-tracking
+counterpart; the refresh MUST be **fast-forward-only** — a divergent local branch (one holding
+commits not on the remote) is left exactly as-is, never reset, rebased, or otherwise made to
+discard local-only commits — and **best-effort** — an unreachable remote, authentication failure,
+or any failed fetch leaves the local branch at its current tip and does NOT fail the caller. The
+operation MUST be invocable independently of worktree creation, so the same operation backs both
+automatic refresh-on-create and a future manually-triggered refresh. It MUST NOT leak sensitive
+values: the branch name, the worktree id or its slug, absolute filesystem paths, and git command
+arguments MUST NOT appear in telemetry spans or logs, and the PAT MUST NOT appear in process
+arguments, the remote URL, or logs and MUST be supplied only through the credential helper. (Git
+necessarily receives branch refs such as `refs/heads/<branch>` and `origin/<branch>` as its own
+arguments; the requirement is about telemetry, logs, and the PAT — not about hiding ref names from
+git itself.)
+
+#### Scenario: A fast-forwardable branch is brought up to date
+
+- **WHEN** the refresh runs for a local branch whose remote-tracking counterpart has advanced and
+  the local branch can fast-forward to it (no local-only commits)
+- **THEN** the local branch ref is fast-forwarded to the fetched remote tip, so a subsequent read
+  of that branch sees the latest remote commits
+
+#### Scenario: A divergent local branch is left intact
+
+- **WHEN** the refresh runs for a local branch that has commits not present on the remote (it has
+  diverged from its remote-tracking counterpart)
+- **THEN** the refresh does not fast-forward, the local branch ref and its local-only commits are
+  left unchanged, and the operation reports success/no-op without raising
+
+#### Scenario: An unreachable remote is tolerated best-effort
+
+- **WHEN** the refresh runs but the fetch from `origin` fails (the remote is unreachable, the
+  caller is offline, or authentication fails)
+- **THEN** the operation does not throw to its caller, the local branch is left at its current tip,
+  no branch name, worktree id, absolute path, or git command argument appears in telemetry or logs,
+  and the PAT is never placed in process arguments, the remote URL, or logs
+
+#### Scenario: The refresh can be invoked independently of worktree creation
+
+- **WHEN** the branch refresh is invoked directly (not as part of a worktree create)
+- **THEN** it performs the same fast-forward-only, best-effort refresh for the named branch, so the
+  identical guarantee can later back a manual trigger without duplicating the logic
 

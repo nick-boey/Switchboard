@@ -55,6 +55,20 @@ export interface WorktreeService {
     input: WorktreeCreateInput,
     options?: WorktreeRunOptions,
   ): Promise<WorktreeCreateResult>;
+  /**
+   * Bring the local `branch` up to date with its remote, FAST-FORWARD-ONLY and BEST-EFFORT. Fetches
+   * `origin` into the local branch ref: git rejects a non-fast-forward update (so a diverged branch
+   * keeps its local-only commits) and refuses to rewrite a branch checked out in a worktree; an
+   * unreachable remote / auth failure never throws. Resolves `true` only when the local ref actually
+   * advanced (or was already current and the fetch succeeded), `false` otherwise. `createWorktree`
+   * uses it so a new worktree starts from up-to-date remote state; it is exposed standalone so a
+   * future manual "pull" trigger reuses the exact same operation.
+   */
+  updateBranchFromRemote(
+    target: RepoTarget,
+    branch: string,
+    options?: WorktreeRunOptions,
+  ): Promise<boolean>;
   listWorktrees(target: RepoTarget): Promise<WorktreeSummary[]>;
   removeWorktree(target: RepoTarget, wtId: string): Promise<void>;
   /**
@@ -235,6 +249,16 @@ export function createWorktreeService(
     rmSync(path, { recursive: true, force: true });
   };
 
+  // Shared credential seam for any fetch from origin: the env + leading args that route the PAT
+  // through the git credential helper (never argv, the remote URL, or logs). Extras are empty when
+  // no GitHub token is configured.
+  const githubFetchEnv = (): { env: NodeJS.ProcessEnv; helperArgs: string[] } => {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    if (!ctx.config.github) return { env, helperArgs: [] };
+    env[TOKEN_FILE_ENV] = writeGithubToken(ctx, ctx.config.github.token);
+    return { env, helperArgs: credentialHelperArgs(ensureCredentialHelperScript(ctx)) };
+  };
+
   const fetchOrigin = async (t: RepoTarget, options: WorktreeRunOptions): Promise<void> => {
     const bare = gitService.bareDir(t);
     // Ensure remote-tracking refs exist so a worktree can track origin/<branch>.
@@ -245,13 +269,7 @@ export function createWorktreeService(
       'remote.origin.fetch',
       '+refs/heads/*:refs/remotes/origin/*',
     ]);
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    let helperArgs: string[] = [];
-    if (ctx.config.github) {
-      const tokenFile = writeGithubToken(ctx, ctx.config.github.token);
-      env[TOKEN_FILE_ENV] = tokenFile;
-      helperArgs = credentialHelperArgs(ensureCredentialHelperScript(ctx));
-    }
+    const { env, helperArgs } = githubFetchEnv();
     await runner.capture([...helperArgs, '--git-dir', bare, 'fetch', '--quiet', 'origin'], {
       ...options,
       env,
@@ -267,8 +285,99 @@ export function createWorktreeService(
     return code === 0 && name ? name : 'HEAD';
   };
 
+  // Refresh ONE branch's remote-tracking ref from origin (force `+`, which is always safe — it never
+  // touches a working tree). Best-effort: an unreachable remote / auth failure (or any spawn error)
+  // resolves false and leaves every ref as-is, so the caller never fails offline. The PAT is supplied
+  // only through the credential helper, and no telemetry span or log is emitted here.
+  const fetchTracking = async (
+    t: RepoTarget,
+    branch: string,
+    options: WorktreeRunOptions,
+  ): Promise<boolean> => {
+    if (!isSafeBranchName(branch)) return false;
+    const bare = gitService.bareDir(t);
+    const { env, helperArgs } = githubFetchEnv();
+    try {
+      const result = await runner.capture(
+        [
+          ...helperArgs,
+          '--git-dir',
+          bare,
+          'fetch',
+          '--quiet',
+          'origin',
+          `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+        ],
+        { ...options, env },
+      );
+      return result.code === 0;
+    } catch {
+      return false;
+    }
+  };
+
+  // Fast-forward the LOCAL `refs/heads/<branch>` to its ALREADY-FETCHED remote-tracking ref
+  // (`origin/<branch>`), FAST-FORWARD-ONLY. A diverged or ahead local branch (not an ancestor of the
+  // tracking ref) is left untouched so its local-only commits survive; `git branch -f` additionally
+  // refuses a branch checked out in a worktree, so a checked-out branch is never force-moved. Returns
+  // true only when the local ref ends up at the remote tip. Assumes the caller already refreshed
+  // origin/<branch> (via fetchOrigin or fetchTracking).
+  const fastForwardLocal = async (bare: string, branch: string): Promise<boolean> => {
+    const remoteRef = `refs/remotes/origin/${branch}`;
+    const localRef = `refs/heads/${branch}`;
+    if (!(await refExists(bare, remoteRef))) return false;
+    if (!(await refExists(bare, localRef))) return true; // nothing local to move; tracking is fresh
+    const isAncestor = await probe([
+      '--git-dir',
+      bare,
+      'merge-base',
+      '--is-ancestor',
+      localRef,
+      remoteRef,
+    ]);
+    if (isAncestor.code !== 0) return false; // diverged or ahead → preserve local-only commits
+    return (await probe(['--git-dir', bare, 'branch', '-f', branch, remoteRef])).code === 0;
+  };
+
+  // Reusable fast-forward-only, best-effort branch refresh: refresh origin/<branch>, then fast-forward
+  // the local branch to it. Exposed via the service so a manual "pull" trigger reuses the exact logic.
+  const refreshBranch = async (
+    t: RepoTarget,
+    branch: string,
+    options: WorktreeRunOptions,
+  ): Promise<boolean> => {
+    if (!(await fetchTracking(t, branch, options))) return false;
+    return fastForwardLocal(gitService.bareDir(t), branch);
+  };
+
+  // The freshest base ref to cut a NEW branch from. Prefer the up-to-date remote tip (`origin/<base>`)
+  // when no local commits would be lost — there is no local base, or the local base is an ancestor of
+  // the remote tip (a fast-forward). A diverged/ahead local base, or a missing remote ref (offline),
+  // falls back to the local base so its local-only commits survive in the new branch. This lets
+  // create-new pick up remote advances even when the base is checked out in another worktree.
+  const freshestBaseRef = async (bare: string, base: string): Promise<string> => {
+    const remoteRef = `refs/remotes/origin/${base}`;
+    const localRef = `refs/heads/${base}`;
+    if (await refExists(bare, remoteRef)) {
+      if (!(await refExists(bare, localRef))) return remoteRef;
+      const isAncestor = await probe([
+        '--git-dir',
+        bare,
+        'merge-base',
+        '--is-ancestor',
+        localRef,
+        remoteRef,
+      ]);
+      if (isAncestor.code === 0) return remoteRef;
+    }
+    return base;
+  };
+
   const service: WorktreeService = {
     worktreePath,
+
+    updateBranchFromRemote: (target, branch, options = {}) =>
+      refreshBranch(target, branch, options),
 
     async createWorktree(input, options = {}) {
       const { target, branch, mode } = input;
@@ -342,10 +451,18 @@ export function createWorktreeService(
       if (mode === 'new') {
         if (await refExists(bare, `refs/heads/${branch}`)) throw new WorktreeError('branch-exists');
         const base = input.base ?? (await defaultBranch(bare));
-        await git(['--git-dir', bare, 'worktree', 'add', '-b', branch, path, base], options);
+        // Refresh the base from the remote (fast-forward-only + best-effort), then cut the new branch
+        // from the freshest base ref — the up-to-date remote tip when fast-forwardable (even if the
+        // base is checked out elsewhere), else the local base so divergent/offline commits survive.
+        await refreshBranch(target, base, options);
+        const baseRef = await freshestBaseRef(bare, base);
+        await git(['--git-dir', bare, 'worktree', 'add', '-b', branch, path, baseRef], options);
       } else {
         await fetchOrigin(target, options);
         if (await refExists(bare, `refs/heads/${branch}`)) {
+          // fetchOrigin just refreshed origin/<branch>; fast-forward the local branch to it (FF-only,
+          // best-effort) so the checkout lands at the remote tip rather than a stale local ref.
+          await fastForwardLocal(bare, branch);
           await git(['--git-dir', bare, 'worktree', 'add', path, branch], options);
           // Best-effort tracking so ahead/behind is computable (ignore failure).
           await probe(['-C', path, 'branch', `--set-upstream-to=origin/${branch}`, branch]);
