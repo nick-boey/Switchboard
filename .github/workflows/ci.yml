@@ -46,6 +46,13 @@ jobs:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Configure a git identity
+        # A worktree unit test commits into a bare clone that carries no per-repo identity
+        # (git-worktree.test.ts); runners have no global identity, so set a fallback. Local
+        # config still wins, so the temp-git fixture's own identity is preserved.
+        run: |
+          git config --global user.email "ci@switchboard.local"
+          git config --global user.name "Switchboard CI"
       - run: pnpm -r build # `just build`
       - run: pnpm exec vitest run # `just test`
 
