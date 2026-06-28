@@ -1,5 +1,5 @@
 import { Box, Group, Stack, Text } from '@mantine/core';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CloneErrorKind, CloneStatus, OperationStatus } from '@switchboard/shared';
 import { createSwitchboardClient, type SwitchboardClient } from '../api/client';
@@ -164,6 +164,15 @@ export function GettingReady({ repoId, client: injected, onRetry, onBack }: Gett
   });
 
   const status: CloneStatus = statusQuery.data?.status ?? 'cloning';
+
+  // The repositories home/sidebar keep the shared `['cloned-repos']` query mounted, so a completed
+  // clone would otherwise leave them on the stale pre-clone list. Refresh it once the clone is ready
+  // so the newly cloned repository appears on the home and in the sidebar without a reload.
+  useEffect(() => {
+    if (status === 'ready') {
+      void queryClient.invalidateQueries({ queryKey: ['cloned-repos'] });
+    }
+  }, [status, queryClient]);
 
   return (
     <GettingReadyView

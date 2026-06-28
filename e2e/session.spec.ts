@@ -162,9 +162,8 @@ async function openHubRepo(
   );
   await page.goto('/');
   await expect(page.getByTestId('app-shell')).toBeVisible();
-  await page.getByTestId('nav-worktrees').click();
-  await expect(page.getByTestId('worktrees-hub')).toBeVisible();
-  await page.getByTestId('wt-hub-repo-acme-widget-factory').click();
+  // Worktrees are shown inline on the repositories home — acme/widget-factory's section renders its
+  // Worktrees directly, with no master-detail repo-selection step.
   await expect(page.getByTestId('worktrees')).toBeVisible();
 }
 

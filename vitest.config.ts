@@ -8,6 +8,15 @@ export default defineConfig({
     // unit harness does not require a prior build.
     conditions: ['switchboard-source'],
   },
+  // Vite 8 no longer feeds `resolve.conditions` into the Node/SSR resolver that Vitest uses
+  // for `environment: 'node'`, so the `switchboard-source` source-resolution must be set here
+  // too — otherwise every unit test that imports a workspace package at runtime fails to
+  // resolve `@switchboard/shared` / `@switchboard/server` (falls back to the unbuilt `dist`).
+  ssr: {
+    resolve: {
+      conditions: ['switchboard-source'],
+    },
+  },
   test: {
     environment: 'node',
     include: ['packages/**/*.test.{ts,tsx}', 'apps/**/*.test.{ts,tsx}'],

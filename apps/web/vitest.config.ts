@@ -12,6 +12,14 @@ export default defineConfig({
   resolve: {
     conditions: ['switchboard-source'],
   },
+  // Vite 8 no longer feeds `resolve.conditions` into the Node/SSR resolver Vitest uses for
+  // `environment: 'node'`; mirror the source condition here so `@switchboard/*` workspace
+  // imports resolve to TypeScript source (not the unbuilt `dist`). See the root vitest.config.ts.
+  ssr: {
+    resolve: {
+      conditions: ['switchboard-source'],
+    },
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
