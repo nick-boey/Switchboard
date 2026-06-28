@@ -96,9 +96,6 @@ export function ReposHomeView({
               id={repoAnchorId(target)}
               style={{ scrollMarginTop: ANCHOR_OFFSET }}
             >
-              <Text fz="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
-                {toRepoId(target)}
-              </Text>
               {renderWorktrees(target)}
             </Box>
           ))}
