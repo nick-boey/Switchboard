@@ -16,6 +16,7 @@ import { ReposFlow } from '../repos/ReposFlow';
 import { ReposHome } from '../repos/ReposHome';
 import { ReposNav } from '../repos/ReposNav';
 import { groupReposByOrg, repoAnchorId } from '../repos/group-repos';
+import { useLiveSessionCount } from '../sessions';
 import { Plug } from '../ui/plug';
 
 /**
@@ -28,7 +29,10 @@ export const LAYOUT_BREAKPOINT = 'sm';
 export interface AppShellProps {
   /** Inject a typed client (Storybook / tests). The app builds one from runtime config. */
   client?: SwitchboardClient;
-  /** Live Claude session count shown in the header (display-only). */
+  /**
+   * Override the header live-session count (Storybook / tests). When omitted, the count is derived
+   * from real per-repo liveness across the cloned repositories.
+   */
   liveSessions?: number;
 }
 
@@ -40,7 +44,7 @@ export interface AppShellProps {
  * `useState`-based: a sidebar repo link sets the home view and a pending scroll target, and a
  * mount-then-scroll effect brings that repository's section into view once it has mounted.
  */
-export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellProps) {
+export function AppShell({ client: injectedClient, liveSessions }: AppShellProps) {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(false);
   const [view, setView] = useState<'home' | 'new-repo'>('home');
   const [pendingScrollAnchor, setPendingScrollAnchor] = useState<string | null>(null);
@@ -60,7 +64,15 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
       return res.json();
     },
   });
-  const navGroups = cloned.isSuccess ? groupReposByOrg(cloned.data.repos) : [];
+  const repos = cloned.isSuccess ? cloned.data.repos : [];
+  const navGroups = groupReposByOrg(repos);
+
+  // Header live-session count: the aggregate of every cloned repo's live sessions (there is no
+  // global sessions endpoint). The `liveSessions` prop, when provided, overrides for Storybook/tests
+  // and is kept genuinely display-only — passing `[]` suppresses the per-repo liveness queries so an
+  // injected count never triggers session polling.
+  const derivedLiveSessions = useLiveSessionCount(client, liveSessions === undefined ? repos : []);
+  const liveSessionCount = liveSessions ?? derivedLiveSessions;
 
   const openNewRepository = (): void => setView('new-repo');
   const selectRepo = (target: RepoTarget): void => {
@@ -109,11 +121,11 @@ export function AppShell({ client: injectedClient, liveSessions = 0 }: AppShellP
           </Group>
           <Group gap={6} wrap="nowrap" data-testid="live-session-count">
             <Plug
-              status={liveSessions > 0 ? 'running' : 'off'}
+              status={liveSessionCount > 0 ? 'running' : 'off'}
               size={12}
-              label={`${liveSessions} live sessions`}
+              label={`${liveSessionCount} live sessions`}
             />
-            <Text fz="xs">{liveSessions}</Text>
+            <Text fz="xs">{liveSessionCount}</Text>
           </Group>
         </Group>
       </MantineAppShell.Header>

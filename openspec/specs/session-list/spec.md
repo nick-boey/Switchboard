@@ -12,8 +12,8 @@ reporting **existence and worktree mapping only**. It MUST NOT track or return c
 (model, context usage, last message, history), which is the mobile app's domain. The candidate set is
 the repository's **existing** worktrees; a session whose worktree has been deleted (an orphan) cannot
 be forward-derived and is therefore **out of scope** of the listing (manual cleanup — a known
-limitation). `session-list` serves exactly the per-worktree plug liveness and the safe-to-delete
-`SessionProbe` seam below — nothing more.
+limitation). `session-list` serves exactly the per-worktree plug liveness, the safe-to-delete
+`SessionProbe` seam below, and the web app's aggregate header live-session count — nothing more.
 
 #### Scenario: A worktree with a live tmux session is listed as on
 
@@ -115,4 +115,40 @@ change.
 
 - **WHEN** a worktree's session was killed outside Switchboard and the hub re-reads liveness
 - **THEN** its plug updates to off, reflecting tmux truth rather than a stale settled operation
+
+### Requirement: The header reflects the aggregate live-session count
+
+The web app SHALL display, in the application header, a live-session count that equals the
+**aggregate** number of live sessions across all cloned repositories, derived from the same
+per-repository session-liveness data that drives the per-worktree plug — and it MUST NOT render
+a constant placeholder (such as `0`) when sessions are live. The header count MUST self-correct
+from tmux truth on the next liveness read (the same liveness data the worktrees hub re-reads), so
+that a session started or killed outside the header's own actions is reflected without a reload, and
+the header indicator MUST render its **on** state when the aggregate is greater than zero and its
+**off** state when it is zero.
+
+#### Scenario: The header count is non-zero when sessions are live (regression)
+
+- **WHEN** one or more cloned repositories have live sessions and the header is rendered from the
+  session-liveness data
+- **THEN** the header live-session count equals the total number of live sessions, not a constant
+  `0`, and the header indicator renders its **on** state
+
+#### Scenario: The header count aggregates across repositories
+
+- **WHEN** live sessions exist in more than one cloned repository
+- **THEN** the header count equals the sum of the live-session counts across every cloned
+  repository
+
+#### Scenario: The header count is zero when no session is live
+
+- **WHEN** no cloned repository has a live session
+- **THEN** the header live-session count is `0` and the header indicator renders its **off** state
+
+#### Scenario: The header count self-corrects from tmux truth
+
+- **WHEN** the underlying per-repository liveness data changes (for example a session is killed
+  outside Switchboard) and the header re-reads that liveness data
+- **THEN** the header count updates to the new aggregate — decreasing when sessions end — reflecting
+  tmux truth rather than a stale value
 
