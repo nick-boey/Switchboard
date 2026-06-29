@@ -1,0 +1,64 @@
+// link-claude-code-online — PLANNED architecture overlay (docs-migration.md row).
+//
+// Surfaces a one-click "open in Claude web" affordance per live session. Switchboard already
+// launches `claude --remote-control`, so every session is bridged to Claude's backplane; the only
+// missing piece is reading the CLOUD bridge session id back (the `session_…` token behind a
+// `https://claude.ai/code/<id>` link) — which is NOT the local `--session-id` UUID, so it must be
+// retrieved, never synthesised (plan.md Decision 1).
+//
+// Adds one narrow API component, `sessionLinkResolver` (mirrors `sessionProbe`'s single-
+// responsibility precedent), that reads claude's per-session state file
+// `~/.claude/sessions/<pid>.json`, matches it by the launch-assigned session UUID, and returns the
+// `bridgeSessionId`. Adds the new `Switchboard.WebSPA -> ClaudeBackplane` deep-link edge. Every
+// addition is tagged `#todo`; view ids are prefixed `link-claude-code-online-*`.
+//
+// The `component` kind and the `todo` tag are declared in `specification.c4`, so this file adds no
+// specification block — it reuses them and references the base `Switchboard.Api`,
+// `Switchboard.WebSPA`, `TmuxHost`, and `ClaudeBackplane`.
+
+model {
+
+  extend Switchboard.Api {
+
+    sessionLinkResolver = component 'Session Web-Link Resolver' {
+      #todo
+      description "PURE resolver of a live session's CLOUD bridge session id for the claude.ai/code deep link. Takes the launch-assigned session UUID as INPUT (sessionService reads it from the operation ledger and passes it in — the resolver itself has no ledger dependency). Builds ONE bounded index per poll over claude's per-session state files (~/.claude/sessions/<pid>.json), bounded to the newest N entries by mtime within a deadline, looks up the entry by that UUID, and returns its bridgeSessionId only if it matches the strict /^session_[A-Za-z0-9]+$/ token shape. The state file is undocumented internal Claude Code state, so each file is Zod-validated with a TOLERANT schema: an unknown/additive field is ignored and the session still resolves (no telemetry). The resolver degrades to NO link WITH structured telemetry only on a BREAKING change — a missing/invalid required field, a malformed bridgeSessionId token, a parse/size failure, or hitting the scan bound — so a breaking format change is observable rather than a silent UI absence. The format knowledge is contained here alone; the read is never load-bearing for liveness."
+      technology 'Node fs, Zod'
+    }
+  }
+
+  // sessionService enriches the per-repo listing with each live session's bridge id (mirrors the
+  // existing `sessionService -> sessionProbe` liveness edge). sessionService owns the ledger lookup:
+  // it reads the recorded launch session UUID via its existing `-> operationLedger` edge and passes
+  // it into the pure resolver, so no resolver -> operationLedger edge exists (boundary kept narrow).
+  Switchboard.Api.sessionService -> Switchboard.Api.sessionLinkResolver 'Passes each live session''s recorded launch UUID (read from the operation ledger) to the pure resolver and collects its bridge id for the per-repo listing' {
+    #todo
+  }
+
+  // The new read: the resolver reads the bridge id from the state file the `claude` process maintains
+  // on the host (the TmuxHost domain), matched by the launch-assigned session UUID.
+  Switchboard.Api.sessionLinkResolver -> TmuxHost "Reads the cloud bridge session id from claude's per-session state file (~/.claude/sessions/<pid>.json), matched by the launch-assigned session UUID" {
+    #todo
+  }
+
+  // The new user-facing flow: the web app deep-links into the live session on Claude Code for web.
+  Switchboard.WebSPA -> ClaudeBackplane 'Deep-links the user to claude.ai/code/<bridge id> to remote-control the live session from the web' {
+    #todo
+  }
+}
+
+views {
+
+  view link-claude-code-online-api of Switchboard.Api {
+    title 'link-claude-code-online — API components (planned)'
+
+    include *
+  }
+
+  view link-claude-code-online-flow of Switchboard {
+    title 'link-claude-code-online — bridge-id flow + web deep link (planned)'
+
+    include *
+    include Switchboard.Api.*
+  }
+}
