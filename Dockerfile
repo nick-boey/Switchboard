@@ -12,7 +12,9 @@
 # ---- builder: install + build the whole workspace, then deploy the CLI standalone ----------------
 # Base matches the repo Node engine (package.json engines.node ">=26"; tsup target node26).
 FROM node:26-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@11.4.0 --activate
+# corepack is no longer bundled in the Node images, so install it before enabling it; it then reads
+# the pinned pnpm from package.json `packageManager` (the single source of truth for the version).
+RUN npm install -g corepack@latest && corepack enable && corepack prepare pnpm@11.4.0 --activate
 WORKDIR /repo
 COPY . .
 # Build every package (tsc for shared/server, tsup for the cli bin), then `pnpm deploy` the CLI into
@@ -20,7 +22,7 @@ COPY . .
 # transitive runtime deps (hono, @hono/node-server, zod, the OpenTelemetry SDK) resolved under it.
 RUN pnpm install --frozen-lockfile \
  && pnpm -r build \
- && pnpm --filter @switchboard/cli --prod deploy /opt/switchboard
+ && pnpm --filter @switchboard/cli --prod --legacy deploy /opt/switchboard
 
 # ---- runtime: minimal image with tailscale + tmux + git + the deployed CLI -----------------------
 FROM node:26-alpine AS runtime
