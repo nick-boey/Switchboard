@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
   parseRepoTarget,
+  sessionDisplayName,
   tmuxSessionName,
   type BridgeSessionId,
   type RepoTarget,
@@ -48,22 +49,25 @@ export interface LaunchArgvOptions {
    */
   sessionId: string;
   /**
-   * Optional session name (the `name-sessions` `-n/--name` flag). Modelled as a composition point so
-   * a future rebase can add it WITHOUT a chance of silently dropping `--session-id`.
+   * The human-readable `<repo>/<branch-slug>` Claude display name (`name-sessions`). Claude is named
+   * on BOTH surfaces: `--name` (the prompt-box / `/resume` / terminal-title display name) and
+   * `--remote-control=<name>` (the Remote Control session label). The `=` form is REQUIRED —
+   * `--remote-control` takes an *optional* value commander will not bind from a space-separated token,
+   * so a bare `--remote-control <name>` would leave the session auto-named.
    */
-  name?: string;
+  name: string;
 }
 
 /**
- * Build the detached launch argv (plan Decision 10 / design Decision 2): `claude` with the resolver's
- * join key `--session-id <uuid>` and `--remote-control`, passed as ARGV (never a shell line). This is
- * the single composition point for additional launch flags — `--session-id` is the resolver's only
- * exact join key, so a unit test pins that neither required flag can be dropped or reordered out.
+ * Build the detached launch argv (plan Decision 10 / design Decision 2), passed as ARGV (never a
+ * shell line). This is the SINGLE composition point for the slice's launch flags: the bridge-id
+ * resolver's join key `--session-id <uuid>` (`session-web-link`) composed with the `name-sessions`
+ * naming on both surfaces — `--remote-control=<name>` + `--name <name>`. `--session-id` is the
+ * resolver's only exact join key, so a unit test pins that it survives alongside the name flags and
+ * can never be dropped or reordered out (the drop-guard invariant).
  */
 export function buildLaunchArgv({ sessionId, name }: LaunchArgvOptions): string[] {
-  const argv = ['claude', '--session-id', sessionId, '--remote-control'];
-  if (name !== undefined) argv.push('--name', name);
-  return argv;
+  return ['claude', '--session-id', sessionId, `--remote-control=${name}`, '--name', name];
 }
 
 /** The minimal worktree-service surface the session slice needs (the real service satisfies it). */
@@ -206,6 +210,9 @@ export function createSessionOrchestrator(
       // original UUID (one session) and only a genuinely new op (including the stale-record reconcile
       // after an external kill) records this fresh one — see `metadata` below.
       const uuid = randomUUID();
+      // The human-readable `<repo>/<branch-slug>` Claude names itself with (name-sessions); rides
+      // only inside argv (composed with the resolver join key by the single argv builder).
+      const displayName = sessionDisplayName(repoId, wtId);
 
       const op = await ledger.start({
         type: 'session',
@@ -222,9 +229,10 @@ export function createSessionOrchestrator(
             throw new SessionLaunchError('no-worktree');
           }
           const path = worktreeService.worktreePath(target, wtId);
-          const argv = buildLaunchArgv({ sessionId: uuid });
+          const argv = buildLaunchArgv({ sessionId: uuid, name: displayName });
           // Telemetry (Decision 7): the name, path, `(repoId, wtId)`, and argv go under
-          // blocklisted `session.*` keys so the redactor masks them — never plain attributes.
+          // blocklisted `session.*` keys so the redactor masks them — never plain attributes. The
+          // display name rides ONLY inside `session.argv`, so `session.*` keeps it redacted too.
           ctx.telemetry
             .startSpan('session.launch', {
               'session.name': name,

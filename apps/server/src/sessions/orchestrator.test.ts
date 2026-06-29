@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  idForBranch,
+  sessionDisplayName,
   tmuxSessionName,
   type BridgeSessionId,
   type RepoTarget,
@@ -79,19 +81,45 @@ describe('session orchestrator — launch', () => {
     expect(tmux.calls).toHaveLength(1);
     expect(tmux.calls[0].name).toBe(name);
     expect(tmux.calls[0].cwd).toBe(`/ws/repos/acme/widget-factory/worktrees/${WT_ID}`);
-    // The launch argv carries the resolver's join key + remote-control, built as argv (not a shell
-    // line) — `--session-id`'s value is a fresh UUID (its recording is asserted in group 3.3 below).
+    // The argv composes the resolver join key with name-sessions naming on BOTH surfaces, as argv
+    // (never a shell line): `--session-id <uuid>` + `--remote-control=<name>` + `--name <name>`,
+    // where `<name>` = `widget-factory/feature-login` (repo name + `<wt-id>` minus its `--<hash>`).
+    // `--session-id`'s value is a fresh UUID (its recording is asserted in group 3.3 below).
     const command = tmux.calls[0].command;
     expect(command[0]).toBe('claude');
-    expect(command).toContain('--remote-control');
     expect(command[command.indexOf('--session-id') + 1]).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
+    expect(command).toContain('--remote-control=widget-factory/feature-login');
+    expect(command[command.indexOf('--name') + 1]).toBe('widget-factory/feature-login');
     expect(await tmux.hasSession(name)).toBe(true);
     // The launch returns the SESSION launch status, never the clone `OperationStatus` shape: the
     // in-flight op reports the transient `starting` (not `cloning`), then settles `ready`.
     expect(status.status).toBe('starting');
     expect((await orch.getLaunchStatus(REPO, WT_ID))?.status).toBe('ready');
+  });
+
+  it('passes the derived name as argv tokens (never a shell line) even for a hostile branch', async () => {
+    // A branch full of shell metacharacters still maps to a path-safe <wt-id> via idForBranch, so the
+    // derived <repo>/<slug> name is composed only of the safe id charset.
+    const hostileWtId = idForBranch('feature/$(rm -rf ~); `whoami` & echo pwned');
+    const orch = make();
+    await orch.launchSession(REPO, hostileWtId);
+    await orch.whenSettled(REPO, hostileWtId);
+
+    const displayName = sessionDisplayName(REPO, hostileWtId);
+    // The name carries no shell metacharacters — only the safe slug/repo charset (`/` is the
+    // <repo>/<slug> separator, not interpolation).
+    expect(displayName).toMatch(/^[A-Za-z0-9._/-]+$/);
+    // It reaches tmux as DISCRETE argv tokens, never interpolated into a shell line — composed by the
+    // single argv builder alongside the bridge-id resolver join key (`--session-id <uuid>`).
+    const command = tmux.calls[0].command;
+    expect(command[0]).toBe('claude');
+    expect(command).toContain(`--remote-control=${displayName}`);
+    expect(command[command.indexOf('--name') + 1]).toBe(displayName);
+    expect(command[command.indexOf('--session-id') + 1]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 
   it('collapses concurrent duplicate launches to a single session (idempotent)', async () => {

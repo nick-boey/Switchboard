@@ -4,6 +4,7 @@ import {
   bridgeSessionIdSchema,
   isTerminalLaunchState,
   isValidTmuxSessionName,
+  sessionDisplayName,
   sessionLaunchRequestSchema,
   sessionLaunchStatusSchema,
   sessionListResponseSchema,
@@ -49,6 +50,50 @@ describe('tmuxSessionName', () => {
   it('is stable across many derivations of the same pair', () => {
     const first = tmuxSessionName(repoId, wtId);
     for (let i = 0; i < 5; i += 1) expect(tmuxSessionName(repoId, wtId)).toBe(first);
+  });
+});
+
+/**
+ * The human-readable Claude display name (task 2.1, design Decision 1). `sessionDisplayName` composes
+ * `<repo>/<branch-slug>` — the repository NAME (the `<repo-id>` segment after the owner) plus the
+ * `<wt-id>` with only its trailing `--<hash>` removed. Forward-derived and lossy: the same branch
+ * across differently-named repos stays distinct (the repo name is folded in), while two ids that
+ * resolve to the same `<repo>/<slug>` — same repo name under different owners, or branches whose slugs
+ * coincide — deterministically share a name (owner-crossing and the dropped hash are accepted).
+ */
+describe('sessionDisplayName', () => {
+  it('composes <repo>/<slug>: repo name + the <wt-id> with only its trailing --<hash> stripped', () => {
+    expect(sessionDisplayName('acme/widget-factory', 'name-sessions--7130389dc45a')).toBe(
+      'widget-factory/name-sessions',
+    );
+    // The strip removes ONLY the trailing 12-hex hash, never an interior `-` of the slug.
+    expect(sessionDisplayName('acme/my-repo', 'release-2-0--0123456789ab')).toBe(
+      'my-repo/release-2-0',
+    );
+  });
+
+  it('keeps the same branch distinct across differently-named repos (folds in the repo name)', () => {
+    const wtId = idForBranch('main'); // a function of the branch alone → identical across repos
+    expect(sessionDisplayName('acme/a', wtId)).toBe('a/main');
+    expect(sessionDisplayName('acme/b', wtId)).toBe('b/main');
+    expect(sessionDisplayName('acme/a', wtId)).not.toBe(sessionDisplayName('acme/b', wtId));
+  });
+
+  it('accepts the owner-crossing collision: same repo name under different owners → same name', () => {
+    const wtId = idForBranch('main');
+    expect(sessionDisplayName('acme/widget', wtId)).toBe('widget/main');
+    expect(sessionDisplayName('other/widget', wtId)).toBe('widget/main');
+    expect(sessionDisplayName('acme/widget', wtId)).toBe(sessionDisplayName('other/widget', wtId));
+  });
+
+  it('accepts the same-repo slug collision: two <wt-id>s that strip to the same slug → same name', () => {
+    // Case-folding branch pairs slugify identically but carry distinct hashes (idForBranch hashes the
+    // exact branch); stripping the hash collapses them to one deterministic name.
+    const a = idForBranch('Feature/Login');
+    const b = idForBranch('feature/login');
+    expect(a).not.toBe(b); // distinct <wt-id>s (distinct hashes)
+    expect(sessionDisplayName('acme/widget', a)).toBe('widget/feature-login');
+    expect(sessionDisplayName('acme/widget', b)).toBe('widget/feature-login');
   });
 });
 

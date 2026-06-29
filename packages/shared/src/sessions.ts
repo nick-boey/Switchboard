@@ -49,6 +49,27 @@ export function isValidTmuxSessionName(value: string): boolean {
   return TMUX_SESSION_NAME.test(value);
 }
 
+/** Trailing `--<12 hex>` hash of a `<wt-id>`; `slugForBranch` collapses separator runs, so the
+ * only `--` in a `<wt-id>` is this suffix — stripping it never eats an interior `-` of the slug. */
+const WT_ID_HASH_SUFFIX = /--[0-9a-f]{12}$/;
+
+/**
+ * Derive the human-readable Claude session display name `<repo>/<branch-slug>` for a worktree from
+ * `(repoId, wtId)` (Decision 1) — the name shown in Claude's Remote Control list, the `/resume`
+ * picker, and the terminal/tmux title. `<repo>` is the repository NAME (the `<repo-id>` segment
+ * after the owner); `<branch-slug>` is the `<wt-id>` with only its trailing `--<hash>` suffix
+ * removed. Pure, browser-safe, and forward-only — the exact branch is never decoded (Decision 7).
+ * The repo name is folded in so the same branch in two differently-named repos stays distinct;
+ * the owner and hash are intentionally dropped, so two ids resolving to the same `<repo>/<slug>`
+ * (same repo name under different owners, or branches whose slugs coincide) deterministically share
+ * a name — an accepted collision, unlike `tmuxSessionName`'s fully-disambiguating `(repoId, wtId)`.
+ */
+export function sessionDisplayName(repoId: string, wtId: string): string {
+  const repo = repoId.slice(repoId.indexOf('/') + 1);
+  const slug = wtId.replace(WT_ID_HASH_SUFFIX, '');
+  return `${repo}/${slug}`;
+}
+
 // --- Launch / stop request schemas (Decision 8) -----------------------------
 
 /**
