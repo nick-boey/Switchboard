@@ -51,7 +51,12 @@ function fakeClient(overrides: {
               : ok({
                   repoId: 'acme/infra',
                   sessions: [
-                    { repoId: 'acme/infra', wtId: 'a--0123456789ab', status: 'on' },
+                    {
+                      repoId: 'acme/infra',
+                      wtId: 'a--0123456789ab',
+                      status: 'on',
+                      bridgeSessionId: 'session_01ResolvedSessionA',
+                    },
                     { repoId: 'acme/infra', wtId: 'b--abcdef012345', status: 'on' },
                   ],
                 }),
@@ -82,10 +87,15 @@ function fakeClient(overrides: {
 }
 
 describe('fetchLiveSessions', () => {
-  it('returns the set of live wt-ids for a repo', async () => {
+  it('returns the live sessions keyed by wt-id, carrying the optional resolved bridge id', async () => {
     const { client } = fakeClient({});
     const live = await fetchLiveSessions(client, 'acme/infra');
-    expect(live).toEqual(new Set(['a--0123456789ab', 'b--abcdef012345']));
+    // Keyed by wt-id (existence + mapping); `.size` keeps serving the header live-session count.
+    expect([...live.keys()]).toEqual(['a--0123456789ab', 'b--abcdef012345']);
+    expect(live.size).toBe(2);
+    // The resolved session carries its branded bridge id; the unresolved one omits it.
+    expect(live.get('a--0123456789ab')?.bridgeSessionId).toBe('session_01ResolvedSessionA');
+    expect(live.get('b--abcdef012345')?.bridgeSessionId).toBeUndefined();
   });
 
   it('throws on a non-ok response', async () => {

@@ -101,6 +101,7 @@ export {
   sessionLaunchErrorSchema,
   sessionLaunchStatusSchema,
   isTerminalLaunchState,
+  bridgeSessionIdSchema,
   sessionSummarySchema,
   sessionListResponseSchema,
 } from './sessions.js';
@@ -112,6 +113,7 @@ export type {
   SessionLaunchErrorKind,
   SessionLaunchFailure,
   SessionLaunchStatus,
+  BridgeSessionId,
   SessionSummary,
   SessionListResponse,
 } from './sessions.js';

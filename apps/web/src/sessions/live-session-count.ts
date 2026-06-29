@@ -1,5 +1,5 @@
 import { useQueries, type UseQueryOptions } from '@tanstack/react-query';
-import { toRepoId, type RepoTarget } from '@switchboard/shared';
+import { toRepoId, type RepoTarget, type SessionSummary } from '@switchboard/shared';
 import type { SwitchboardClient } from '../api/client';
 import { fetchLiveSessions, sessionLivenessQueryKey } from './session-queries';
 
@@ -19,7 +19,12 @@ const HEADER_LIVENESS_REFETCH_MS = 4000;
 export function liveSessionCountQueries(
   client: SwitchboardClient,
   repos: readonly RepoTarget[],
-): UseQueryOptions<Set<string>, Error, Set<string>, readonly [string, string]>[] {
+): UseQueryOptions<
+  Map<string, SessionSummary>,
+  Error,
+  Map<string, SessionSummary>,
+  readonly [string, string]
+>[] {
   return repos.map((repo) => {
     const repoId = toRepoId(repo);
     return {
@@ -30,9 +35,14 @@ export function liveSessionCountQueries(
   });
 }
 
-/** Sum the live `<wt-id>` counts across repos; a not-yet-loaded repo (`undefined`) contributes 0. */
+/**
+ * Sum the live-session counts across repos; a not-yet-loaded repo (`undefined`) contributes 0. The
+ * shared liveness query now caches a `Map<wt-id, SessionSummary>` (so the hub can also read each
+ * session's bridge id), but the count only ever needs the per-repo entry count — typed against
+ * `.size` so any sized collection (Map/Set) sums correctly.
+ */
 export function aggregateLiveSessionCount(
-  liveSets: ReadonlyArray<ReadonlySet<string> | undefined>,
+  liveSets: ReadonlyArray<{ readonly size: number } | undefined>,
 ): number {
   return liveSets.reduce<number>((sum, set) => sum + (set?.size ?? 0), 0);
 }

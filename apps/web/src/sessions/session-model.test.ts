@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveSessionStatus, plugToggleAction, sessionStatusToPlug } from './session-model';
+import {
+  bridgeLinkFor,
+  deriveSessionStatus,
+  plugToggleAction,
+  sessionStatusToPlug,
+} from './session-model';
 
 /**
  * Pure session→plug-status model tests (task 9.1, design Decision 5). The session status is derived
@@ -73,5 +78,23 @@ describe('plugToggleAction', () => {
     expect(plugToggleAction('on')).toBe('stop');
     expect(plugToggleAction('error')).toBe('stop');
     expect(plugToggleAction('starting')).toBeNull();
+  });
+});
+
+describe('bridgeLinkFor (session-web-link: present only when live + resolved)', () => {
+  const bridge = 'session_011M7D8EPisCss4xNqQ4PNiQ';
+
+  it('returns the bridge id for a live (on) session that has resolved one', () => {
+    expect(bridgeLinkFor('on', bridge)).toBe(bridge);
+  });
+
+  it('returns undefined for a live session whose bridge id has not resolved', () => {
+    expect(bridgeLinkFor('on', undefined)).toBeUndefined();
+  });
+
+  it('returns undefined for off / starting / error, even with a (stale) bridge id', () => {
+    expect(bridgeLinkFor('off', bridge)).toBeUndefined();
+    expect(bridgeLinkFor('starting', bridge)).toBeUndefined();
+    expect(bridgeLinkFor('error', bridge)).toBeUndefined();
   });
 });

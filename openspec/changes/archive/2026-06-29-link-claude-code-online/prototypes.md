@@ -7,4 +7,4 @@ is blocked while any row is `open` or any file on disk is unlisted.
 
 | Story file | Explores | Disposition | Status |
 | --- | --- | --- | --- |
-| claude-web-link.stories.tsx | The "open in Claude web" deep-link affordance: placement beside the plug vs far-right, its absent-until-bridge-id-resolves behaviour across session states, and its resting/hover icon treatment | open | open |
+| claude-web-link.stories.tsx | The "open in Claude web" deep-link affordance: placement beside the plug vs far-right, its absent-until-bridge-id-resolves behaviour across session states, and its resting/hover icon treatment | delete — superseded by the promoted production story `apps/web/src/sessions/ClaudeWebLink.stories.tsx` + component `ClaudeWebLink.tsx` (tasks 5.2/5.3); placement A (beside the plug) is recorded in design Decision 6 | resolved |

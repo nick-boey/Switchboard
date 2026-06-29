@@ -6,6 +6,7 @@ import type {
   PlugSessionStatus,
   SessionLaunchState,
   SessionLaunchStatus,
+  SessionSummary,
   WorktreeListResponse,
   WorktreeSummary,
 } from '@switchboard/shared';
@@ -169,13 +170,14 @@ export function Worktrees({
   });
 
   // Session liveness (claude-session-launch Decision 4/5): tmux truth, re-read so the plug
-  // self-corrects after an external change. The set holds the `<wt-id>`s with a live session.
+  // self-corrects after an external change. The map is keyed by `<wt-id>` and carries each live
+  // session's summary — existence (`.has`) AND its optional resolved bridge id (session-web-link).
   const livenessQuery = useQuery({
     queryKey: sessionLivenessQueryKey(repoId),
     queryFn: () => fetchLiveSessions(client, repoId),
     refetchInterval: 4000,
   });
-  const liveSet = livenessQuery.data ?? new Set<string>();
+  const liveByWtId = livenessQuery.data ?? new Map<string, SessionSummary>();
 
   const invalidateLiveness = (): void => {
     void queryClient.invalidateQueries({ queryKey: sessionLivenessQueryKey(repoId) });
@@ -275,14 +277,17 @@ export function Worktrees({
 
   const worktrees = listQuery.isError ? undefined : listQuery.data?.worktrees;
   const sessionStatusByWtId: Record<string, PlugSessionStatus> = {};
+  const bridgeSessionIdByWtId: Record<string, string | undefined> = {};
   for (const wt of worktrees ?? []) {
     sessionStatusByWtId[wt.wtId] = deriveSessionStatus({
-      live: liveSet.has(wt.wtId),
+      live: liveByWtId.has(wt.wtId),
       pending: pendingWtIds.has(wt.wtId),
       failed: failedWtIds.has(wt.wtId),
       // Each plug's launch op comes from THAT worktree's tracked poll (or none if untracked).
       launchOp: launchOpFor(tracking, launchOpByWtId, wt.wtId),
     });
+    // The resolved bridge id (if any) rides the same liveness read; the view gates its visibility.
+    bridgeSessionIdByWtId[wt.wtId] = liveByWtId.get(wt.wtId)?.bridgeSessionId;
   }
 
   const onToggleSession = (wt: WorktreeSummary, status: PlugSessionStatus): void => {
@@ -299,6 +304,7 @@ export function Worktrees({
         worktrees={worktrees}
         isError={listQuery.isError}
         sessionStatusByWtId={sessionStatusByWtId}
+        bridgeSessionIdByWtId={bridgeSessionIdByWtId}
         onToggleSession={onToggleSession}
         onAddWorktree={() => setCreating(true)}
         onRequestDelete={(wt) => setConfirming(wt)}

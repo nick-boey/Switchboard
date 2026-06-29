@@ -5,7 +5,7 @@ import { Button, IconButton } from '../ui/controls';
 import { GitLamp, PrLamp, StatusLight } from '../ui/lamp';
 import { Plug } from '../ui/plug';
 import { Card } from '../ui/surface';
-import { sessionStatusToPlug } from '../sessions';
+import { bridgeLinkFor, ClaudeWebLink, sessionStatusToPlug } from '../sessions';
 import { isWorktreeSafeToDelete, prLampStatus } from './worktree-model';
 
 /**
@@ -81,15 +81,21 @@ export function DeleteWorktreeControl({
 function WorktreeRow({
   wt,
   sessionStatus,
+  bridgeSessionId,
   onToggleSession,
   onRequestDelete,
 }: {
   wt: WorktreeSummary;
   sessionStatus: PlugSessionStatus;
+  /** The session's resolved cloud bridge id, if any (session-web-link). */
+  bridgeSessionId?: string;
   onToggleSession?: (wt: WorktreeSummary, status: PlugSessionStatus) => void;
   onRequestDelete: (wt: WorktreeSummary) => void;
 }) {
   const safe = isWorktreeSafeToDelete(wt);
+  // The deep link is surfaced ONLY for a live, bridge-resolved session (the rule lives in the pure
+  // model so a stale id can never appear on an off/starting/error plug).
+  const bridgeLink = bridgeLinkFor(sessionStatus, bridgeSessionId);
   return (
     <Box
       px="md"
@@ -111,6 +117,15 @@ function WorktreeRow({
             onActivate={onToggleSession ? () => onToggleSession(wt, sessionStatus) : undefined}
             data-testid={`wt-plug-${wt.wtId}`}
           />
+          {/* "Open in Claude web" — placement A: immediately right of the plug, a benign navigation
+              action kept away from the destructive delete control (session-web-link Decision 6). */}
+          {bridgeLink && (
+            <ClaudeWebLink
+              bridgeSessionId={bridgeLink}
+              size={26}
+              data-testid={`wt-claude-link-${wt.wtId}`}
+            />
+          )}
           <Group gap={12} wrap="nowrap" align="center">
             <GitLamp status={wt.sync} data-testid={`wt-git-${wt.wtId}`} />
             <PrLamp status={prLampStatus(wt)} data-testid={`wt-pr-${wt.wtId}`} />
@@ -165,6 +180,11 @@ export interface WorktreesViewProps {
    * `off`. When `onToggleSession` is omitted the plug is display-only.
    */
   sessionStatusByWtId?: Record<string, PlugSessionStatus>;
+  /**
+   * Per-worktree resolved cloud bridge id (session-web-link). Present only for a live, resolved
+   * session; the "open in Claude web" link is rendered from it (and only when the plug is `on`).
+   */
+  bridgeSessionIdByWtId?: Record<string, string | undefined>;
   /** Activate a worktree's plug — launch (off) or stop (on/error); transient is guarded. */
   onToggleSession?: (wt: WorktreeSummary, status: PlugSessionStatus) => void;
   onAddWorktree?: () => void;
@@ -177,6 +197,7 @@ export function WorktreesView({
   worktrees,
   isError = false,
   sessionStatusByWtId,
+  bridgeSessionIdByWtId,
   onToggleSession,
   onAddWorktree,
   onRequestDelete,
@@ -228,6 +249,7 @@ export function WorktreesView({
           key={wt.wtId}
           wt={wt}
           sessionStatus={sessionStatusByWtId?.[wt.wtId] ?? 'off'}
+          bridgeSessionId={bridgeSessionIdByWtId?.[wt.wtId]}
           onToggleSession={onToggleSession}
           onRequestDelete={(w) => onRequestDelete?.(w)}
         />

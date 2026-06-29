@@ -1,10 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { rmSync } from 'node:fs';
-import { tmuxSessionName, type RepoTarget, type WorktreeSummary } from '@switchboard/shared';
+import { readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  tmuxSessionName,
+  type BridgeSessionId,
+  type RepoTarget,
+  type RuntimeContext,
+  type WorktreeSummary,
+} from '@switchboard/shared';
 import { makeServerTestContext } from '../testing/operation-scaffolding.js';
 import { fakeTmuxRunner, type FakeTmuxRunner } from '../testing/tmux-runner.js';
 import { TmuxLaunchError, type TmuxRunner } from './tmux-runner.js';
-import { createSessionOrchestrator, type SessionWorktreeView } from './orchestrator.js';
+import { createSessionOrchestrator, sessionKey, type SessionWorktreeView } from './orchestrator.js';
+
+/**
+ * Read the launch op's recorded `metadata.sessionId` directly from its on-disk ledger record (the
+ * exact join key the bridge resolver later matches). The ledger keys each record by an
+ * URI-encoded operation key under `<workspaceRoot>/operations` (design Decision 1).
+ */
+function recordedSessionId(ctx: RuntimeContext, repoId: string, wtId: string): string | undefined {
+  const file = join(
+    ctx.workspaceRoot,
+    'operations',
+    `${encodeURIComponent(sessionKey(repoId, wtId))}.json`,
+  );
+  const record = JSON.parse(readFileSync(file, 'utf8')) as { metadata?: { sessionId?: string } };
+  return record.metadata?.sessionId;
+}
 
 /**
  * Session launch-through-the-ledger tests (task 4.1, design Decision 2). A launch spawns the
@@ -48,18 +70,23 @@ describe('session orchestrator — launch', () => {
       ...deps,
     });
 
-  it('launches a detached session rooted at the worktree path running claude --remote-control', async () => {
+  it('launches a detached session rooted at the worktree path running claude --session-id <uuid> --remote-control', async () => {
     const orch = make();
     const status = await orch.launchSession(REPO, WT_ID);
     await orch.whenSettled(REPO, WT_ID);
 
     const name = tmuxSessionName(REPO, WT_ID);
     expect(tmux.calls).toHaveLength(1);
-    expect(tmux.calls[0]).toEqual({
-      name,
-      cwd: `/ws/repos/acme/widget-factory/worktrees/${WT_ID}`,
-      command: ['claude', '--remote-control'],
-    });
+    expect(tmux.calls[0].name).toBe(name);
+    expect(tmux.calls[0].cwd).toBe(`/ws/repos/acme/widget-factory/worktrees/${WT_ID}`);
+    // The launch argv carries the resolver's join key + remote-control, built as argv (not a shell
+    // line) — `--session-id`'s value is a fresh UUID (its recording is asserted in group 3.3 below).
+    const command = tmux.calls[0].command;
+    expect(command[0]).toBe('claude');
+    expect(command).toContain('--remote-control');
+    expect(command[command.indexOf('--session-id') + 1]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
     expect(await tmux.hasSession(name)).toBe(true);
     // The launch returns the SESSION launch status, never the clone `OperationStatus` shape: the
     // in-flight op reports the transient `starting` (not `cloning`), then settles `ready`.
@@ -158,6 +185,54 @@ describe('session orchestrator — launch', () => {
     expect(tmux.calls).toHaveLength(2);
     expect(await tmux.hasSession(name)).toBe(true);
   });
+
+  it('records the launch UUID as metadata.sessionId — the resolver join key', async () => {
+    const orch = make();
+    await orch.launchSession(REPO, WT_ID);
+    await orch.whenSettled(REPO, WT_ID);
+    const recorded = recordedSessionId(ctx, REPO, WT_ID);
+    // The recorded UUID is well-formed AND is exactly the `--session-id` value the launch ran.
+    expect(recorded).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    const command = tmux.calls[0].command;
+    expect(command[command.indexOf('--session-id') + 1]).toBe(recorded);
+  });
+
+  it('a relaunch after stop records a DIFFERENT UUID (a fresh conversation per launch)', async () => {
+    const orch = make();
+    await orch.launchSession(REPO, WT_ID);
+    await orch.whenSettled(REPO, WT_ID);
+    const first = recordedSessionId(ctx, REPO, WT_ID);
+
+    await orch.stopSession(REPO, WT_ID);
+    await orch.launchSession(REPO, WT_ID);
+    await orch.whenSettled(REPO, WT_ID);
+    const second = recordedSessionId(ctx, REPO, WT_ID);
+
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(second).not.toBe(first);
+  });
+
+  it('a relaunch after an external tmux kill records a DIFFERENT UUID (never the dead session’s)', async () => {
+    const orch = make();
+    await orch.launchSession(REPO, WT_ID);
+    await orch.whenSettled(REPO, WT_ID);
+    const name = tmuxSessionName(REPO, WT_ID);
+    const first = recordedSessionId(ctx, REPO, WT_ID);
+
+    // Killed outside Switchboard: the `succeeded` record is now STALE (its marker is gone). A
+    // relaunch must NOT reuse it — it creates a fresh op recording a NEW UUID, so the resolver
+    // matches the live session, never the dead one.
+    tmux.setSession(name, false);
+    await orch.launchSession(REPO, WT_ID);
+    await orch.whenSettled(REPO, WT_ID);
+    const second = recordedSessionId(ctx, REPO, WT_ID);
+
+    expect(first).toBeDefined();
+    expect(second).not.toBe(first);
+    // And the live session's argv carries the NEW recorded UUID (not the dead one).
+    expect(tmux.calls[1].command[tmux.calls[1].command.indexOf('--session-id') + 1]).toBe(second);
+  });
 });
 
 describe('session orchestrator — listSessions (tmux truth, existence + mapping only)', () => {
@@ -193,6 +268,37 @@ describe('session orchestrator — listSessions (tmux truth, existence + mapping
       tmuxRunner: tmux,
     });
     expect(await orch.listSessions(target)).toEqual([]);
+    rmSync(ctx.workspaceRoot, { recursive: true, force: true });
+  });
+
+  it('attaches the resolved bridgeSessionId for a live session and omits it when unresolved', async () => {
+    const { ctx } = makeServerTestContext();
+    const tmux = fakeTmuxRunner();
+    const otherId = 'feature-other--0123456789ab';
+    const bridge = 'session_01ResolvedLiveOne9' as BridgeSessionId;
+    let indexCalls = 0;
+    const orch = createSessionOrchestrator(ctx, {
+      worktreeService: fakeWorktreeView({ listWorktrees: async () => [wt(liveId), wt(otherId)] }),
+      tmuxRunner: tmux,
+      // The fixtured resolver maps ONLY `liveId`'s recorded launch UUID → a bridge id; `otherId`'s is
+      // absent (the bridge has not connected). Counts calls to prove the index builds once per list.
+      readBridgeIndex: async () => {
+        indexCalls += 1;
+        const uuid = recordedSessionId(ctx, REPO, liveId);
+        return new Map(uuid ? [[uuid, bridge]] : []);
+      },
+    });
+    // Launch both so each is live with a recorded UUID; only `liveId` resolves to a bridge id.
+    await orch.launchSession(REPO, liveId);
+    await orch.whenSettled(REPO, liveId);
+    await orch.launchSession(REPO, otherId);
+    await orch.whenSettled(REPO, otherId);
+
+    const sessions = await orch.listSessions(target);
+    expect(sessions.find((s) => s.wtId === liveId)?.bridgeSessionId).toBe(bridge);
+    expect(sessions.find((s) => s.wtId === otherId)?.bridgeSessionId).toBeUndefined();
+    // The bridge index is built ONCE per `listSessions` call, not once per live session (Decision 7).
+    expect(indexCalls).toBe(1);
     rmSync(ctx.workspaceRoot, { recursive: true, force: true });
   });
 });

@@ -1,5 +1,6 @@
 import type { InferRequestType, InferResponseType } from 'hono/client';
 import type {
+  BridgeSessionId,
   OperationStatus,
   RepoListResponse,
   RepoTarget,
@@ -136,4 +137,13 @@ export type _SessStatusResponseContract = Expect<
 >;
 export type _SessListResponseContract = Expect<
   Equal<InferResponseType<SessListGet, 200>, SessionListResponse>
+>;
+
+// The listed session carries the OPTIONAL, BRANDED cloud bridge id (session-web-link Decision 5/8).
+// Dropping the field, widening it to a plain `string`, or un-branding it (server-side drift away
+// from the shared `bridgeSessionIdSchema`) fails the build here — the typed client/web compose the
+// `claude.ai/code/<id>` deep link off exactly this branded token.
+type SessListSession = InferResponseType<SessListGet, 200>['sessions'][number];
+export type _SessListBridgeIdContract = Expect<
+  Equal<SessListSession['bridgeSessionId'], BridgeSessionId | undefined>
 >;

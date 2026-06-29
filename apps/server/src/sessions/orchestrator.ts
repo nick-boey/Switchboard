@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
   parseRepoTarget,
   tmuxSessionName,
+  type BridgeSessionId,
   type RepoTarget,
   type RuntimeContext,
   type SessionLaunchErrorKind,
@@ -20,6 +22,7 @@ import {
   type ProcessProbe,
 } from '../operations/index.js';
 import { createSessionProbe } from './session-probe.js';
+import { readSessionStateIndex, resolveBridgeSessionId } from './session-link-resolver.js';
 import type { TmuxRunner } from './tmux-runner.js';
 
 /**
@@ -37,8 +40,31 @@ import type { TmuxRunner } from './tmux-runner.js';
  * worktree orchestrator introduces no cycle (Decision 4).
  */
 
-/** The detached launch command, passed as argv (never a shell line). */
-const CLAUDE_LAUNCH_COMMAND: readonly string[] = ['claude', '--remote-control'];
+/** Options for the composable launch-argv builder (plan Decision 10 / design Decision 2). */
+export interface LaunchArgvOptions {
+  /**
+   * The fresh per-launch UUID v4 — the bridge-id resolver's exact join key, recorded in the
+   * operation ledger and matched against claude's per-session state (`session-web-link`).
+   */
+  sessionId: string;
+  /**
+   * Optional session name (the `name-sessions` `-n/--name` flag). Modelled as a composition point so
+   * a future rebase can add it WITHOUT a chance of silently dropping `--session-id`.
+   */
+  name?: string;
+}
+
+/**
+ * Build the detached launch argv (plan Decision 10 / design Decision 2): `claude` with the resolver's
+ * join key `--session-id <uuid>` and `--remote-control`, passed as ARGV (never a shell line). This is
+ * the single composition point for additional launch flags — `--session-id` is the resolver's only
+ * exact join key, so a unit test pins that neither required flag can be dropped or reordered out.
+ */
+export function buildLaunchArgv({ sessionId, name }: LaunchArgvOptions): string[] {
+  const argv = ['claude', '--session-id', sessionId, '--remote-control'];
+  if (name !== undefined) argv.push('--name', name);
+  return argv;
+}
 
 /** The minimal worktree-service surface the session slice needs (the real service satisfies it). */
 export interface SessionWorktreeView {
@@ -76,6 +102,12 @@ export interface SessionOrchestratorDeps {
   processProbe?: ProcessProbe;
   /** The shared per-session `KeyedLock` (launch + stop + reconcile lock the same key). */
   lock?: KeyedLock;
+  /**
+   * Build the cloud bridge-id index for `listSessions` enrichment (`session-web-link` Decision 3).
+   * Called AT MOST ONCE per `listSessions` call (a single bounded scan of `~/.claude/sessions`).
+   * Defaults to the real reader wired to `ctx.telemetry`; tests fixture it off the real home.
+   */
+  readBridgeIndex?: () => Promise<ReadonlyMap<string, BridgeSessionId>>;
 }
 
 /**
@@ -136,6 +168,11 @@ export function createSessionOrchestrator(
   const lock = deps.lock ?? createKeyedLock();
   // Liveness/listing derive from tmux truth only (no worktree back-edge, Decision 4).
   const probe = createSessionProbe(tmuxRunner);
+  // The bridge-id index reader (`session-web-link` Decision 3): the real bounded `~/.claude/sessions`
+  // scan wired to `ctx.telemetry` by default; tests inject a fixtured one. `sessionService` owns the
+  // ledger read and passes each recorded UUID into the PURE lookup — the resolver has no ledger edge.
+  const readBridgeIndex =
+    deps.readBridgeIndex ?? (() => readSessionStateIndex({ telemetry: ctx.telemetry }));
 
   const ledger: OperationLedger = createOperationLedger({
     root: join(ctx.workspaceRoot, 'operations'),
@@ -164,16 +201,28 @@ export function createSessionOrchestrator(
       const target = parseRepoTarget(repoId)!; // route-validated `<repo-id>`
       const key = sessionKey(repoId, wtId);
       const name = tmuxSessionName(repoId, wtId);
+      // A fresh random UUID v4 per launch (plan Decisions 1/4): a new-conversation-per-launch join
+      // key. The ledger writes `metadata` only on a NEW record, so an idempotent reuse keeps the
+      // original UUID (one session) and only a genuinely new op (including the stale-record reconcile
+      // after an external kill) records this fresh one — see `metadata` below.
+      const uuid = randomUUID();
 
       const op = await ledger.start({
         type: 'session',
         key,
+        // The ledger writes metadata on a NEW record only (ledger.ts) — so an idempotent in-flight
+        // reuse keeps the original UUID (one session, one join key), while a genuinely new op (a
+        // relaunch after stop, OR the stale-`succeeded`-record reconcile after an external kill)
+        // records THIS fresh UUID. The resolver thus always joins on the live session, never a dead
+        // one (design Decision 1 / session-launch spec).
+        metadata: { sessionId: uuid },
         run: async () => {
           // Launch requires an existing worktree (spec) — a typed failure, never a 500.
           if (!(await worktreeService.isWorktreeComplete(target, wtId))) {
             throw new SessionLaunchError('no-worktree');
           }
           const path = worktreeService.worktreePath(target, wtId);
+          const argv = buildLaunchArgv({ sessionId: uuid });
           // Telemetry (Decision 7): the name, path, `(repoId, wtId)`, and argv go under
           // blocklisted `session.*` keys so the redactor masks them — never plain attributes.
           ctx.telemetry
@@ -182,10 +231,10 @@ export function createSessionOrchestrator(
               'session.repoId': repoId,
               'session.wtId': wtId,
               'session.path': path,
-              'session.argv': CLAUDE_LAUNCH_COMMAND.join(' '),
+              'session.argv': argv.join(' '),
             })
             .end();
-          await tmuxRunner.newSession(name, path, [...CLAUDE_LAUNCH_COMMAND]);
+          await tmuxRunner.newSession(name, path, argv);
         },
       });
       return toSessionStatus(op);
@@ -224,15 +273,33 @@ export function createSessionOrchestrator(
 
     async listSessions(target) {
       // Iterate the repo's EXISTING worktrees, forward-derive each session name through the probe,
-      // and return existence + mapping only (Decision 4). A deleted worktree's orphan has left this
-      // set — it cannot be derived (names are never decoded) and is therefore out of scope.
+      // and return existence + mapping (Decision 4) plus an optional resolved bridge id
+      // (`session-web-link`). A deleted worktree's orphan has left this set — it cannot be derived
+      // (names are never decoded) and is therefore out of scope.
       const repoId = `${target.owner}/${target.repo}`;
       const worktrees = await worktreeService.listWorktrees(target);
-      const sessions: SessionSummary[] = [];
+      const live: WorktreeSummary[] = [];
       for (const wt of worktrees) {
-        if (await probe.hasActiveSession(repoId, wt.wtId)) {
-          sessions.push({ repoId, wtId: wt.wtId, status: 'on' });
-        }
+        if (await probe.hasActiveSession(repoId, wt.wtId)) live.push(wt);
+      }
+      // Build the bridge-id index ONCE per call — only when there is a live session to enrich
+      // (`session-web-link` Decision 7). The scan is bounded + best-effort; it never gates liveness.
+      const bridgeIndex = live.length > 0 ? await readBridgeIndex() : undefined;
+      const sessions: SessionSummary[] = [];
+      for (const wt of live) {
+        // `sessionService` owns the ledger read: the live session's recorded launch UUID is the exact
+        // join key passed into the pure resolver. No recorded UUID (server restart, pre-change record,
+        // a session launched outside Switchboard) ⇒ no link — never a `cwd` guess.
+        const recorded = (await ledger.get(sessionKey(repoId, wt.wtId)))?.metadata?.sessionId;
+        const bridgeSessionId = bridgeIndex
+          ? resolveBridgeSessionId(bridgeIndex, recorded)
+          : undefined;
+        sessions.push({
+          repoId,
+          wtId: wt.wtId,
+          status: 'on',
+          ...(bridgeSessionId ? { bridgeSessionId } : {}),
+        });
       }
       return sessions;
     },

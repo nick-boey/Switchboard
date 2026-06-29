@@ -51,6 +51,19 @@ export function deriveSessionStatus({
   return live ? 'on' : 'off';
 }
 
+/**
+ * The bridge deep-link id to surface for a session (`session-web-link`): present ONLY for a LIVE
+ * (`on`), bridge-resolved session — absent for `off`/`starting`/`error` and for a live session whose
+ * bridge id has not resolved yet. Pure rule so the affordance's visibility is testable in one place
+ * and a stale id can never leak onto a non-live plug. The web composes the `claude.ai/code/<id>` URL.
+ */
+export function bridgeLinkFor(
+  status: PlugSessionStatus,
+  bridgeSessionId: string | undefined,
+): string | undefined {
+  return status === 'on' ? bridgeSessionId : undefined;
+}
+
 /** The session status → plug visual mapping (Decision 5). `idle` is reserved/unused in the MVP. */
 const SESSION_TO_PLUG: Record<PlugSessionStatus, PlugStatus> = {
   off: 'off',
