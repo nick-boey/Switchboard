@@ -93,6 +93,7 @@ export type {
 export {
   tmuxSessionName,
   isValidTmuxSessionName,
+  sessionDisplayName,
   sessionLaunchRequestSchema,
   sessionStopRequestSchema,
   plugSessionStatusSchema,

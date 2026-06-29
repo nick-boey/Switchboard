@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import {
   parseRepoTarget,
+  sessionDisplayName,
   tmuxSessionName,
   type RepoTarget,
   type RuntimeContext,
@@ -37,8 +38,19 @@ import type { TmuxRunner } from './tmux-runner.js';
  * worktree orchestrator introduces no cycle (Decision 4).
  */
 
-/** The detached launch command, passed as argv (never a shell line). */
-const CLAUDE_LAUNCH_COMMAND: readonly string[] = ['claude', '--remote-control'];
+/**
+ * Build the detached launch argv (never a shell line), naming the Claude session on BOTH surfaces
+ * the CLI exposes: `--name` (the prompt-box / `/resume` / terminal-title display name) and
+ * `--remote-control=<name>` (the Remote Control session label). The `=` form is REQUIRED —
+ * `--remote-control` takes an *optional* value, which commander will not bind from a space-separated
+ * token, so a bare `--remote-control <name>` would leave the session auto-named.
+ */
+const claudeLaunchCommand = (name: string): string[] => [
+  'claude',
+  `--remote-control=${name}`,
+  '--name',
+  name,
+];
 
 /** The minimal worktree-service surface the session slice needs (the real service satisfies it). */
 export interface SessionWorktreeView {
@@ -164,6 +176,8 @@ export function createSessionOrchestrator(
       const target = parseRepoTarget(repoId)!; // route-validated `<repo-id>`
       const key = sessionKey(repoId, wtId);
       const name = tmuxSessionName(repoId, wtId);
+      // The human-readable `<repo>/<branch-slug>` Claude names itself with; rides only inside argv.
+      const argv = claudeLaunchCommand(sessionDisplayName(repoId, wtId));
 
       const op = await ledger.start({
         type: 'session',
@@ -175,17 +189,18 @@ export function createSessionOrchestrator(
           }
           const path = worktreeService.worktreePath(target, wtId);
           // Telemetry (Decision 7): the name, path, `(repoId, wtId)`, and argv go under
-          // blocklisted `session.*` keys so the redactor masks them — never plain attributes.
+          // blocklisted `session.*` keys so the redactor masks them — never plain attributes. The
+          // display name rides ONLY inside `session.argv`, so `session.*` keeps it redacted too.
           ctx.telemetry
             .startSpan('session.launch', {
               'session.name': name,
               'session.repoId': repoId,
               'session.wtId': wtId,
               'session.path': path,
-              'session.argv': CLAUDE_LAUNCH_COMMAND.join(' '),
+              'session.argv': argv.join(' '),
             })
             .end();
-          await tmuxRunner.newSession(name, path, [...CLAUDE_LAUNCH_COMMAND]);
+          await tmuxRunner.newSession(name, path, argv);
         },
       });
       return toSessionStatus(op);

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { rmSync } from 'node:fs';
 import {
   idForBranch,
+  sessionDisplayName,
   tmuxSessionName,
   type RepoTarget,
   type WorktreeSummary,
@@ -39,7 +40,7 @@ describe('session no-leak (name / path / (repo-id, wt-id) / argv never escape un
     };
   }
 
-  it('emits session telemetry that leaks no session name, worktree path, wt-id slug, or argv', async () => {
+  it('emits session telemetry that leaks no session name, display name, worktree path, wt-id slug, or argv', async () => {
     const orch = createSessionOrchestrator(ctx, {
       worktreeService: worktreeView(),
       tmuxRunner: fakeTmuxRunner(),
@@ -53,8 +54,12 @@ describe('session no-leak (name / path / (repo-id, wt-id) / argv never escape un
 
     // ...but it never carries the sensitive values, even unredacted in any attribute value.
     const name = tmuxSessionName(repoId, wtId);
+    // The human-readable `<repo>/<branch-slug>` Claude names itself with — sensitive (it embeds the
+    // branch-derived slug) and rides only inside `session.argv`, so it must stay redacted too.
+    const displayName = sessionDisplayName(repoId, wtId);
     const path = `/ws/repos/acme/widget-factory/worktrees/${wtId}`;
     expect(telemetry.containsSecret(name)).toBe(false);
+    expect(telemetry.containsSecret(displayName)).toBe(false);
     expect(telemetry.containsSecret(path)).toBe(false);
     expect(telemetry.containsSecret(wtId)).toBe(false);
     expect(telemetry.containsSecret(wtId.split('--')[0])).toBe(false); // the slug
@@ -63,8 +68,9 @@ describe('session no-leak (name / path / (repo-id, wt-id) / argv never escape un
     const values = spans
       .flatMap((s) => Object.values(s.attributes))
       .filter((v): v is string => typeof v === 'string');
-    // No attribute value is the raw tmux name or worktree path.
+    // No attribute value is the raw tmux name, the derived display name, or the worktree path.
     expect(values).not.toContain(name);
+    expect(values).not.toContain(displayName);
     expect(values).not.toContain(path);
   });
 });

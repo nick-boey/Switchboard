@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { rmSync } from 'node:fs';
-import { tmuxSessionName, type RepoTarget, type WorktreeSummary } from '@switchboard/shared';
+import {
+  idForBranch,
+  sessionDisplayName,
+  tmuxSessionName,
+  type RepoTarget,
+  type WorktreeSummary,
+} from '@switchboard/shared';
 import { makeServerTestContext } from '../testing/operation-scaffolding.js';
 import { fakeTmuxRunner, type FakeTmuxRunner } from '../testing/tmux-runner.js';
 import { TmuxLaunchError, type TmuxRunner } from './tmux-runner.js';
@@ -58,13 +64,42 @@ describe('session orchestrator — launch', () => {
     expect(tmux.calls[0]).toEqual({
       name,
       cwd: `/ws/repos/acme/widget-factory/worktrees/${WT_ID}`,
-      command: ['claude', '--remote-control'],
+      // Named on both surfaces: the `--name` display name and the Remote Control session name (the
+      // `=` form is required — `--remote-control` takes an optional value commander won't bind
+      // space-separated). `widget-factory/feature-login` = repo name + `<wt-id>` minus its `--<hash>`.
+      command: [
+        'claude',
+        '--remote-control=widget-factory/feature-login',
+        '--name',
+        'widget-factory/feature-login',
+      ],
     });
     expect(await tmux.hasSession(name)).toBe(true);
     // The launch returns the SESSION launch status, never the clone `OperationStatus` shape: the
     // in-flight op reports the transient `starting` (not `cloning`), then settles `ready`.
     expect(status.status).toBe('starting');
     expect((await orch.getLaunchStatus(REPO, WT_ID))?.status).toBe('ready');
+  });
+
+  it('passes the derived name as argv tokens (never a shell line) even for a hostile branch', async () => {
+    // A branch full of shell metacharacters still maps to a path-safe <wt-id> via idForBranch, so the
+    // derived <repo>/<slug> name is composed only of the safe id charset.
+    const hostileWtId = idForBranch('feature/$(rm -rf ~); `whoami` & echo pwned');
+    const orch = make();
+    await orch.launchSession(REPO, hostileWtId);
+    await orch.whenSettled(REPO, hostileWtId);
+
+    const displayName = sessionDisplayName(REPO, hostileWtId);
+    // The name carries no shell metacharacters — only the safe slug/repo charset (`/` is the
+    // <repo>/<slug> separator, not interpolation).
+    expect(displayName).toMatch(/^[A-Za-z0-9._/-]+$/);
+    // It reaches tmux as DISCRETE argv tokens, never interpolated into a shell line.
+    expect(tmux.calls[0].command).toEqual([
+      'claude',
+      `--remote-control=${displayName}`,
+      '--name',
+      displayName,
+    ]);
   });
 
   it('collapses concurrent duplicate launches to a single session (idempotent)', async () => {
