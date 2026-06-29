@@ -1,0 +1,60 @@
+// branches-control-panel — PLANNED architecture overlay (docs-migration.md row).
+//
+// Phase 1 of the branches programme (git-only; the GitHub PR overlay is Phase 2,
+// Planned/pr-indicators.c4). Reframes the home page around the BRANCH (local + remote) and
+// lights up the branch indicator with real git data. Additions inside `Switchboard.Api`:
+//
+//   1. The existing `gitService` GAINS ref-enumeration and a best-effort repo-wide `git fetch`
+//      (ensuring the +refs/heads/*:refs/remotes/origin/* refspec a bare clone lacks). The fetch
+//      reuses the gitService's existing `-> GitHub` (HTTPS) and `-> credentialHelper` (PAT) edges;
+//      the new fetch responsibility is captured by an additional #todo `gitService -> GitHub` edge.
+//      (worktreeService's current `fetchOrigin` is refactored to use this shared capability.)
+//   2. a new `branchService` component that enumerates a repo's local + remote branches via the
+//      gitService refs and derives the six-state branch indicator (local-only / synced / ahead /
+//      diverged / remote-ahead / remote-only), computing state by joining refs/heads with
+//      refs/remotes/origin (+ merge-base), NOT from %(upstream:track) alone. It marks which
+//      branches have a worktree (and supplies their worktree fields) via the worktreeService.
+//
+// The server-owned compound "create worktree from branch then launch" endpoint reuses the existing
+// `sessionService -> worktreeService` wiring, so it adds no new element here.
+//
+// Every addition is tagged `#todo`; view ids are prefixed `branches-control-panel-*`. The
+// `component` kind and the `todo` tag are already declared in `specification.c4`.
+
+model {
+
+  extend Switchboard.Api {
+
+    branchService = component 'Branch Service' {
+      #todo
+      description 'Enumerates the local AND remote branches for a repository and derives a six-state branch indicator per branch — local-only, synced, ahead, diverged, remote-ahead (local behind), remote-only (no local ref). Reads refs and triggers the best-effort repo-wide fetch via the Git Service (which now owns ref-enumeration + fetch), and computes state by joining refs/heads with refs/remotes/origin plus merge-base, not from %(upstream:track). Marks which branches have a worktree (and supplies their worktree fields) so the web panel renders branch rows and the dashed (no-worktree) plug.'
+      technology 'git CLI, child_process'
+    }
+
+    // Branch enumeration and the repo-wide fetch go through the Git Service (extended this change
+    // with ref-enumeration + a best-effort repo-wide fetch); branchService never shells git itself.
+    branchService -> gitService 'Enumerates the bare clone refs (for-each-ref over both ref namespaces) and triggers the best-effort repo-wide fetch the Git Service now owns' {
+      #todo
+    }
+    // The branch list must mark which branches already have a worktree, and carry that worktree's
+    // fields (wt-id, dirty, path) so the section renders from the branch list as its single source.
+    branchService -> worktreeService 'Reads the worktree set to mark branches that have a worktree and supply their worktree fields' {
+      #todo
+    }
+  }
+
+  // The Git Service gains the repo-wide fetch that populates remote-tracking refs (in addition to
+  // its existing bare-clone edge), reusing its existing credential-helper edge for the PAT.
+  Switchboard.Api.gitService -> GitHub 'Fetches branches repo-wide (best-effort git fetch over HTTPS) to populate remote-tracking refs' {
+    #todo
+  }
+}
+
+views {
+
+  view branches-control-panel-api of Switchboard.Api {
+    title 'branches-control-panel — API components (planned)'
+
+    include *
+  }
+}

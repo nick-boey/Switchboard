@@ -1,0 +1,46 @@
+// pr-indicators — PLANNED architecture overlay (docs-migration.md row).
+//
+// Phase 2 of the branches programme (depends on branches-control-panel). Gives the PR
+// indicator light real data and adds the "PR exists" filter toggle. One addition inside
+// `Switchboard.Api`:
+//
+//   a new `pullRequestService` component that reads OPEN pull requests, their status-check
+//   rollup, mergeable state, and review decision over the GitHub GraphQL API — one batched
+//   query per repo. It is a DISTINCT provider from the REST `githubService` on purpose
+//   (review H1): GraphQL returns HTTP 200 with errors in the body and a points-based rate
+//   budget reported in the body, which the REST provider's status-code-only, never-read-the-
+//   body no-leak model cannot represent. `pullRequestService` maps body-level errors into the
+//   same typed GitHubError kinds WITHOUT surfacing messages, preserving the no-leak property
+//   explicitly rather than by inheritance.
+//
+// Realises the read side of the base model's #planned `Switchboard.Api -> GitHub
+// 'reads/writes pull requests'` edge at the component level. Every addition is tagged `#todo`;
+// view ids are prefixed `pr-indicators-*`. The `component` kind and the `todo` tag are already
+// declared in `specification.c4`.
+
+model {
+
+  extend Switchboard.Api {
+
+    pullRequestService = component 'Pull Request Service' {
+      #todo
+      description 'Reads open pull requests per repository over the GitHub GraphQL API (one batched query): head ref name, isDraft, mergeable, reviewDecision, and the head commit status-check rollup state. Derives the PR indicator state (exists / ready / merge-conflict / checks-failing) with a total mapping over GitHub enums including UNKNOWN/PENDING (distinct from a real conflict and from no-PR). A distinct provider from the REST githubService: PAT-authenticated like githubService (Bearer token, read directly), and maps GraphQL body-level errors and the points-based rate budget into typed GitHubError kinds without surfacing GitHub error messages (the no-leak property, preserved explicitly).'
+      technology 'fetch, GraphQL, Zod'
+    }
+  }
+
+  // Realises the READ side of the base model's #planned `Switchboard.Api -> GitHub
+  // 'reads/writes pull requests'` edge at the component level.
+  Switchboard.Api.pullRequestService -> GitHub 'Reads open pull requests, status-check rollups, mergeable state, and review decision (PAT-authenticated GraphQL)' {
+    #todo
+  }
+}
+
+views {
+
+  view pr-indicators-api of Switchboard.Api {
+    title 'pr-indicators — API components (planned)'
+
+    include *
+  }
+}
