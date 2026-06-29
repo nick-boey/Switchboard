@@ -1,4 +1,4 @@
-import type { SessionLaunchStatus } from '@switchboard/shared';
+import type { SessionLaunchStatus, SessionSummary } from '@switchboard/shared';
 import type { SwitchboardClient } from '../api/client';
 
 /**
@@ -13,16 +13,21 @@ export function sessionLivenessQueryKey(repoId: string): [string, string] {
   return ['sessions', repoId];
 }
 
-/** Fetch the set of `<wt-id>`s with a live session for `repoId` (existence + mapping only). */
+/**
+ * Fetch a repository's live sessions, keyed by `<wt-id>` (existence + mapping, plus the optional
+ * resolved cloud bridge id per session — `session-web-link`). Returns a `Map` so the worktrees hub
+ * reads liveness (`.has`) AND the bridge id (`.get(...).bridgeSessionId`) off ONE list call, and the
+ * header live-session count keeps summing `.size` — a single bounded server scan per 4 s poll.
+ */
 export async function fetchLiveSessions(
   client: SwitchboardClient,
   repoId: string,
-): Promise<Set<string>> {
+): Promise<Map<string, SessionSummary>> {
   const [owner, repo] = repoId.split('/');
   const res = await client.sessions[':owner'][':repo'].$get({ param: { owner, repo } });
   if (!res.ok) throw new Error(`session list failed: ${res.status}`);
   const body = await res.json();
-  return new Set(body.sessions.map((s) => s.wtId));
+  return new Map(body.sessions.map((s) => [s.wtId, s]));
 }
 
 /** Request a launch for a worktree; returns the SESSION launch status (the transient `starting`). */

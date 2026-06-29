@@ -33,6 +33,11 @@ function plugTag(html: string, wtId: string): string {
   return m[0];
 }
 
+function claudeLinkTag(html: string, wtId: string): string | null {
+  const m = html.match(new RegExp(`<a[^>]*data-testid="wt-claude-link-${wtId}"[^>]*>`));
+  return m ? m[0] : null;
+}
+
 describe('worktrees hub plug (session status + actionability)', () => {
   const status = (s: PlugSessionStatus) => ({ [wt().wtId]: s });
 
@@ -112,6 +117,56 @@ describe('worktrees hub plug (session status + actionability)', () => {
     expect(html).not.toContain('data-testid="session-handoff"');
     expect(html.toLowerCase()).not.toContain('open the claude');
     expect(html.toLowerCase()).not.toContain('mobile app');
+  });
+});
+
+describe('worktrees hub "open in Claude web" link (session-web-link)', () => {
+  const wtId = wt().wtId;
+  const bridge = 'session_011M7D8EPisCss4xNqQ4PNiQ';
+
+  it('renders the deep link for a live, bridge-resolved session (href, new tab, noopener, name)', () => {
+    const html = render(
+      <WorktreesView
+        repoId="acme/infra"
+        worktrees={[wt()]}
+        sessionStatusByWtId={{ [wtId]: 'on' }}
+        bridgeSessionIdByWtId={{ [wtId]: bridge }}
+        onToggleSession={() => {}}
+      />,
+    );
+    const tag = claudeLinkTag(html, wtId);
+    expect(tag).not.toBeNull();
+    expect(tag!).toContain(`href="https://claude.ai/code/${bridge}"`);
+    expect(tag!).toContain('target="_blank"');
+    expect(tag!).toContain('noopener');
+    expect(tag!).toContain('aria-label="Open in Claude web"');
+  });
+
+  it('renders NO link for a live session whose bridge id has not resolved yet', () => {
+    const html = render(
+      <WorktreesView
+        repoId="acme/infra"
+        worktrees={[wt()]}
+        sessionStatusByWtId={{ [wtId]: 'on' }}
+        onToggleSession={() => {}}
+      />,
+    );
+    expect(claudeLinkTag(html, wtId)).toBeNull();
+  });
+
+  it('renders NO link for off / starting / error sessions (even if a stale bridge id is present)', () => {
+    for (const status of ['off', 'starting', 'error'] as const) {
+      const html = render(
+        <WorktreesView
+          repoId="acme/infra"
+          worktrees={[wt()]}
+          sessionStatusByWtId={{ [wtId]: status }}
+          bridgeSessionIdByWtId={{ [wtId]: bridge }}
+          onToggleSession={() => {}}
+        />,
+      );
+      expect(claudeLinkTag(html, wtId)).toBeNull();
+    }
   });
 });
 

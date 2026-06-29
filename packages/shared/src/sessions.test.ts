@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { idForBranch } from './worktrees.js';
 import {
+  bridgeSessionIdSchema,
   isTerminalLaunchState,
   isValidTmuxSessionName,
   sessionDisplayName,
@@ -143,6 +144,48 @@ describe('session request/response schemas', () => {
     // A summary rejects any conversation-metadata field (existence + mapping only).
     expect(sessionSummarySchema.safeParse({ repoId, wtId, status: 'on' }).success).toBe(true);
     expect(sessionSummarySchema.safeParse({ repoId, wtId, status: 'off' }).success).toBe(false);
+  });
+});
+
+describe('bridgeSessionId branded token (session-web-link Decision 5/8)', () => {
+  const repoId = 'acme/widget-factory';
+  const wtId = idForBranch('feature/login');
+  const validBridge = 'session_011M7D8EPisCss4xNqQ4PNiQ';
+
+  it('accepts a well-formed session_… token', () => {
+    expect(bridgeSessionIdSchema.safeParse(validBridge).success).toBe(true);
+    expect(bridgeSessionIdSchema.safeParse('session_016iJ8uvtLucRZJ8hiAqpeor').success).toBe(true);
+  });
+
+  it('rejects a UUID, empty, and the wrong shape (the strict allowlist)', () => {
+    // The local launch UUID is a DIFFERENT namespace — it must never pass the bridge brand.
+    expect(bridgeSessionIdSchema.safeParse('42ec9f7f-0000-4000-8000-000000000000').success).toBe(
+      false,
+    );
+    expect(bridgeSessionIdSchema.safeParse('').success).toBe(false);
+    expect(bridgeSessionIdSchema.safeParse('session_').success).toBe(false); // no token body
+    expect(bridgeSessionIdSchema.safeParse('016iJ8uvtLucRZJ8hiAqpeor').success).toBe(false); // no prefix
+    expect(bridgeSessionIdSchema.safeParse('session_has-a-dash').success).toBe(false); // non-base62
+    expect(bridgeSessionIdSchema.safeParse('Session_Uppercased1').success).toBe(false); // wrong prefix case
+  });
+
+  it('is an optional field on the session summary (present when resolved, absent otherwise)', () => {
+    // Absent → still a valid live-session summary (the bridge has not resolved yet).
+    expect(sessionSummarySchema.safeParse({ repoId, wtId, status: 'on' }).success).toBe(true);
+    // Present + brand-valid → valid.
+    expect(
+      sessionSummarySchema.safeParse({ repoId, wtId, status: 'on', bridgeSessionId: validBridge })
+        .success,
+    ).toBe(true);
+    // Present but brand-invalid → rejected (the server never hands an unbranded token to the web).
+    expect(
+      sessionSummarySchema.safeParse({
+        repoId,
+        wtId,
+        status: 'on',
+        bridgeSessionId: 'not-a-bridge-id',
+      }).success,
+    ).toBe(false);
   });
 });
 

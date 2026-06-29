@@ -153,14 +153,31 @@ export function isTerminalLaunchState(status: SessionLaunchState): boolean {
 }
 
 /**
- * One listed session: existence + worktree mapping ONLY (Decision 4). Listing reports live sessions
- * (`status: 'on'`) for the repo's existing worktrees; it carries NO conversation metadata (model,
- * context, last message) — that is the mobile app's domain.
+ * The cloud BRIDGE session id (`session-web-link` Decisions 1/5/8): the `session_…` token behind a
+ * `https://claude.ai/code/<id>` deep link, a DIFFERENT namespace from the local `--session-id` UUID
+ * (so it is retrieved from claude's per-session state, never synthesised). Branded behind a strict
+ * allowlist (`^session_[A-Za-z0-9]+$`), validated at BOTH the server resolver output and this schema,
+ * so the server never hands arbitrary internal-file material to the web as a trusted deep-link token.
+ * The brand makes a raw `string` non-assignable to the field, forcing validation at the boundary.
+ */
+export const bridgeSessionIdSchema = z
+  .string()
+  .regex(/^session_[A-Za-z0-9]+$/)
+  .brand('BridgeSessionId');
+export type BridgeSessionId = z.infer<typeof bridgeSessionIdSchema>;
+
+/**
+ * One listed session: existence + worktree mapping ONLY (Decision 4), plus an OPTIONAL resolved
+ * cloud bridge session id (`session-web-link`). Listing reports live sessions (`status: 'on'`) for
+ * the repo's existing worktrees; the bridge id is best-effort deep-link data populated only once
+ * resolved + brand-valid, absent otherwise. It carries NO conversation metadata (model, context,
+ * last message) — that is the mobile app's domain.
  */
 export const sessionSummarySchema = z.object({
   repoId: z.string(),
   wtId: z.string(),
   status: z.literal('on'),
+  bridgeSessionId: bridgeSessionIdSchema.optional(),
 });
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 

@@ -3,9 +3,11 @@ export {
   sessionStatusToPlug,
   plugToggleAction,
   dispatchPlugToggle,
+  bridgeLinkFor,
   type SessionStatusInput,
   type SessionAction,
 } from './session-model';
+export { ClaudeWebLink, type ClaudeWebLinkProps } from './ClaudeWebLink';
 export {
   sessionLivenessQueryKey,
   fetchLiveSessions,

@@ -37,4 +37,18 @@ views {
 
     include *
   }
+
+  // Views contributed by link-claude-code-online (graduated from its Planned overlay).
+  view link-claude-code-online-api of Switchboard.Api {
+    title 'link-claude-code-online — API components'
+
+    include *
+  }
+
+  view link-claude-code-online-flow of Switchboard {
+    title 'link-claude-code-online — bridge-id flow + web deep link'
+
+    include *
+    include Switchboard.Api.*
+  }
 }

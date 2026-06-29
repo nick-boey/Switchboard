@@ -5,41 +5,52 @@ TBD - created by archiving change claude-session-launch. Update Purpose after ar
 ## Requirements
 ### Requirement: Launch a Claude session detached in a worktree's tmux session
 
-The system SHALL launch `claude --remote-control` **detached in a tmux session rooted at the
-worktree's checkout** (`~/.switchboard/repos/<owner>/<repo>/worktrees/<wt-id>`), so the session
-survives the request and the official Claude mobile app can drive it. The launched session SHALL be
-**named after its repository and branch slug** — `<repo>/<branch-slug>`, where `<repo>` is the
-repository name and `<branch-slug>` is the `<wt-id>` with its trailing `--<hash>` suffix removed
-(e.g. repo `acme/widget-factory` + `<wt-id>` `name-sessions--7130389dc45a` →
-`widget-factory/name-sessions`) — passed to `claude` on both naming surfaces it exposes via the
-exact argv `['claude', '--remote-control=<name>', '--name', '<name>']`: the `--name` display name and
-the Remote Control session name. The Remote Control name MUST use the `--remote-control=<name>`
-equals form — `--remote-control` takes an *optional* value, so a space-separated token would not bind
-and the session would fall back to its auto-generated name. With the name on both surfaces the
-session is identifiable by repo and branch in Claude's Remote Control list, the `/resume` picker, and
-the terminal title. The name SHALL be a deterministic, forward-only function of `(repo-id, wt-id)` —
-including the repository **name** so the same branch in two differently-named repositories stays
-distinct (the owner is not folded in, so two same-named repositories under different owners produce
-the same name, an accepted collision) — and MUST NOT read or pass the exact git branch (which stays
-sensitive). The derived name is itself sensitive (it embeds the branch-derived slug) and MUST appear
-in telemetry only under redacted (blocklisted) attribute keys, never unredacted. The launch command
-and the derived name MUST be passed as argv (never a shell line), MUST rely on the host's existing
-`claude` login (no per-session pairing UI), and MUST require an existing worktree.
+The system SHALL launch `claude` with **Remote Control enabled** **detached in a tmux session rooted
+at the worktree's checkout** (`~/.switchboard/repos/<owner>/<repo>/worktrees/<wt-id>`), so the session
+survives the request and the official Claude mobile app (and Claude Code on the web) can drive it. The
+launch command MUST be assembled by a **single composable argv builder** and passed as **argv** (never
+a shell line). The launched session SHALL be **named after its repository and branch slug** —
+`<repo>/<branch-slug>`, where `<repo>` is the repository name and `<branch-slug>` is the `<wt-id>` with
+its trailing `--<hash>` suffix removed (e.g. repo `acme/widget-factory` + `<wt-id>`
+`name-sessions--7130389dc45a` → `widget-factory/name-sessions`) — passed to `claude` on both naming
+surfaces it exposes: the `--name` display name and the `--remote-control=<name>` Remote Control session
+name. The Remote Control name MUST use the `--remote-control=<name>` equals form — `--remote-control`
+takes an *optional* value, so a space-separated token would not bind and the session would fall back to
+its auto-generated name; with the name on both surfaces the session is identifiable by repo and branch
+in Claude's Remote Control list, the `/resume` picker, and the terminal title. The argv MUST **also**
+include a **`--session-id <uuid>`** flag carrying a **fresh random UUID v4 generated per launch**
+(preserving today's new-conversation-per-launch behaviour), and the launch MUST **record the assigned
+UUID in the session operation's ledger record** so it can later serve as the exact join key for
+resolving the session's cloud bridge id (`session-web-link`). A launch that is **not** an idempotent
+reuse of an in-flight operation — **including a relaunch after the prior session was killed externally**
+(the stale-`succeeded`-record reconcile) — MUST generate and record a **fresh** UUID, so the recorded
+join key always reflects the live session and never a dead one. The argv builder MUST compose
+`--session-id`, `--remote-control=<name>`, and `--name` together and remain extensible for additional
+launch flags, so that none can be silently dropped. The derived name SHALL be a deterministic,
+forward-only function of `(repo-id, wt-id)` — including the repository **name** so the same branch in
+two differently-named repositories stays distinct (the owner is not folded in, so two same-named
+repositories under different owners produce the same name, an accepted collision) — and MUST NOT read
+or pass the exact git branch (which stays sensitive). The derived name is itself sensitive (it embeds
+the branch-derived slug) and MUST appear in telemetry only under redacted (blocklisted) attribute keys,
+never unredacted. The launch MUST rely on the host's existing `claude` login (no per-session pairing
+UI) and MUST require an existing worktree.
 
 #### Scenario: A launch starts a detached tmux session rooted at the worktree
 
 - **WHEN** a session is launched for an existing worktree
 - **THEN** a detached tmux session is created with its working directory set to that worktree's
-  checkout path, running `claude --remote-control` named after the worktree's repo and branch slug
+  checkout path, running `claude` with `--remote-control` enabled and named after the worktree's repo
+  and branch slug
 
 #### Scenario: The launched session is named after its repo and branch slug
 
 - **WHEN** a session is launched for `(repo-id, wt-id)` whose `<wt-id>` is `<slug>--<hash>` (e.g.
   repo `acme/widget-factory`, `<wt-id>` `name-sessions--7130389dc45a`)
-- **THEN** the argv passed to tmux is `['claude', '--remote-control=<repo>/<slug>', '--name', '<repo>/<slug>']`
+- **THEN** the argv passed to tmux carries `--remote-control=<repo>/<slug>` and `--name <repo>/<slug>`
   (e.g. `<repo>/<slug>` = `widget-factory/name-sessions` — the repository name and the `<wt-id>` with
-  the trailing `--<hash>` removed), carrying the name on both naming surfaces: the `--name` display
-  name and the Remote Control session name
+  the trailing `--<hash>` removed) on both naming surfaces — the `--name` display name and the Remote
+  Control session name — composed by the single argv builder alongside the `--session-id <uuid>` join
+  key (`session-web-link`)
 - **AND** the Remote Control name uses the `--remote-control=<name>` equals form, never a
   space-separated `['--remote-control', '<name>']` — `--remote-control` takes an *optional* value that
   a space-separated token would not bind, leaving the session auto-named
@@ -83,6 +94,28 @@ and the derived name MUST be passed as argv (never a shell line), MUST rely on t
 - **WHEN** a session is launched
 - **THEN** no per-session pairing or remote-control auth step is performed; the launch relies on the
   host's existing `claude` login
+
+#### Scenario: A fresh session UUID is assigned and recorded per launch
+
+- **WHEN** a session is launched, and later the same worktree is relaunched after a stop
+- **THEN** each launch passes a distinct, freshly generated `--session-id` UUID and records that UUID
+  in its session operation ledger record (so the two launches are distinct conversations, each with
+  its own join key)
+
+#### Scenario: Relaunch after an external kill records a fresh UUID
+
+- **WHEN** a session's launch has settled `succeeded`, its tmux session is then killed outside
+  Switchboard (so liveness reads `off`), and the worktree is relaunched
+- **THEN** the stale `succeeded` record is not reused; the fresh launch creates a new tmux session
+  **and** records a new, different `metadata.sessionId`, so the bridge-id resolver matches the live
+  session and never the dead one
+
+#### Scenario: The argv builder composes the session-id and naming flags
+
+- **WHEN** the launch argv is built
+- **THEN** it contains `--session-id <uuid>`, `--remote-control=<name>`, and `--name <name>` composed
+  together, and a change that added or reordered other launch flags would still keep `--session-id`
+  present (asserted by the builder's test)
 
 ### Requirement: tmux session names reuse the canonical path-safe scheme
 
