@@ -69,6 +69,37 @@ re-authenticating** and the configuration — including the generated bearer tok
 - **THEN** Tailscale reconnects without re-authenticating and the persisted `~/.switchboard` config
   is intact
 
+### Requirement: The runtime image includes the Claude CLI
+
+The runtime image SHALL install the `claude` CLI (`@anthropic-ai/claude-code`) onto `PATH` as a
+**build-time install baked into the image** — never a runtime download — so that the in-container
+`claude` login can be performed and the session orchestrator's `claude --session-id <uuid>
+--remote-control` launches (spawned by **bare command name**, `apps/server/src/sessions/orchestrator.ts`)
+resolve inside the container. The install SHALL permit the package's lifecycle (postinstall) scripts so
+the published install completes (the runtime's npm skips dependency scripts by default). This image-
+contents requirement is the precondition that makes the credential-persistence strategy below
+meaningful: persisting `~/.claude` only helps if a runnable `claude` exists to consume it.
+
+#### Scenario: The image provides a runnable claude CLI
+
+- **WHEN** the runtime image is built and a shell runs `claude --version` inside it
+- **THEN** the `claude` binary resolves on `PATH` and reports its version (a "not found" or non-zero
+  exit fails the image smoke)
+
+#### Scenario: The orchestrator's bare `claude` launch resolves in the container
+
+- **WHEN** the session orchestrator spawns `claude --session-id <uuid> --remote-control=<name> --name
+  <name>` by bare command name inside the container
+- **THEN** the `claude` executable is found on `PATH`, so the launch fails (if at all) only on a missing
+  login — a separate, typed launch error — never on executable-not-found
+
+#### Scenario: The pinned CLI does not self-update at runtime
+
+- **WHEN** the container runs `claude` and is later restarted (its `~/.claude` volume persisting)
+- **THEN** the image's pinned `claude` is not mutated or migrated by an auto-update (the auto-updater is
+  disabled in the image), so `claude` resolves consistently on every run — the install is fixed at build
+  time, not a runtime download
+
 ### Requirement: Claude credential and secret persistence strategy
 
 The runtime SHALL make the host's `claude` login usable inside the container by persisting `~/.claude`

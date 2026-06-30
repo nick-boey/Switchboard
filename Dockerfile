@@ -27,9 +27,30 @@ RUN pnpm install --frozen-lockfile \
 # ---- runtime: minimal image with tailscale + tmux + git + the deployed CLI -----------------------
 FROM node:26-alpine AS runtime
 # tailscaled + tailscale CLI (userspace networking — see ENTRYPOINT), tmux for session supervision,
-# git for clones, ca-certificates for TLS. The CLI asserts `tailscale >= v1.50.0` at bring-up; the
-# Alpine `tailscale` package is a current stable release at/above that pinned floor.
-RUN apk add --no-cache tailscale tmux git ca-certificates
+# git for clones, ripgrep for Claude Code's file search, ca-certificates for TLS. The CLI asserts
+# `tailscale >= v1.50.0` at bring-up; the Alpine `tailscale` package is a current stable release
+# at/above that pinned floor.
+RUN apk add --no-cache tailscale tmux git ripgrep ca-certificates
+
+# The Claude Code CLI (`claude`) — the session orchestrator spawns it by BARE NAME for
+# `--remote-control` launches (apps/server/src/sessions/orchestrator.ts), and the in-container login
+# populates the /root/.claude volume. Pinned for reproducible builds (bump deliberately). npm 11 skips
+# dependency lifecycle scripts by default, so this package's postinstall is explicitly allow-listed.
+RUN npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@2.1.196
+
+# Keep the pinned CLI immutable + Alpine-correct:
+#   DISABLE_AUTOUPDATER — stop the launch-time background self-update. Left on, it mutates/migrates
+#     the bundled `claude.exe` at runtime, which transiently broke `claude` resolution across
+#     container restarts and violates "the install is baked at build time, never a runtime download".
+#   USE_BUILTIN_RIPGREP=0 — use the musl `ripgrep` apk-installed above, not Claude Code's glibc-built
+#     bundled copy (which is unreliable under musl).
+ENV DISABLE_AUTOUPDATER=1 \
+    USE_BUILTIN_RIPGREP=0
+
+# Build-time smoke: fail the image build loudly if the pinned `claude` (or its search tool) is not
+# runnable — turns the "a runnable claude CLI is baked into the image" promise into a build invariant
+# rather than a manual post-build check.
+RUN claude --version && rg --version
 
 # The deployed, self-contained CLI (its workspace + transitive deps resolved by `pnpm deploy`).
 COPY --from=builder /opt/switchboard /opt/switchboard
