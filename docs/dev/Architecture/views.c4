@@ -51,4 +51,18 @@ views {
     include *
     include Switchboard.Api.*
   }
+
+  // Views contributed by runtime-cli-docker (graduated from its Planned overlay).
+  view runtime-cli-docker-cli of Switchboard.Cli {
+    title 'runtime-cli-docker — CLI orchestration'
+
+    include *
+  }
+
+  view runtime-cli-docker-ingress of Switchboard {
+    title 'runtime-cli-docker — serve ingress + CLI orchestration'
+
+    include *
+    include Switchboard.Cli.*
+  }
 }

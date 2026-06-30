@@ -1,21 +1,20 @@
 ---
 title: 'Plan: Switchboard MVP'
-openspec-changes:
-  - runtime-cli-docker
+openspec-changes: []
 ---
 
 # Plan: Switchboard MVP
 
-> Programme page coordinating the Switchboard MVP. It is the **arbiter of
-> consistency** across the changes below: any decision that affects more than one
-> change is recorded here, not in a single change's artifacts.
+> Programme page for the Switchboard MVP. It was the **arbiter of consistency** across
+> the changes below: any decision that affected more than one change was recorded here,
+> not in a single change's artifacts.
 >
-> `openspec-changes` (frontmatter) lists changes **as they are created** and drops them
-> **once archived**. `foundations` is now **implemented and archived** (its specs are
-> merged into `openspec/specs/`); the remaining changes are roadmapped in
-> [Change roadmap](#change-roadmap) and added to the frontmatter as each is created,
-> keeping the bidirectional plan-page ↔ `plan.md` link honest. (The runtime spike is a
-> throwaway investigation, not an OpenSpec change — see the roadmap.)
+> **The MVP is complete — every change in the [roadmap](#change-roadmap) below is
+> implemented and archived** (their specs are merged into `openspec/specs/`), so the
+> `openspec-changes` frontmatter is now empty. This page persists as the durable
+> **completed-MVP record**: its locked cross-cutting decisions, security posture, and
+> Future-features list outlive the MVP. (The runtime spike was a throwaway investigation,
+> not an OpenSpec change — see the roadmap.)
 
 ## Problem
 
@@ -131,7 +130,7 @@ prose in `tasks.md`).
 | 3     | `repo-clone-browse` ✅ _archived_                                      | switch-feature    | List GitHub repos/orgs (PAT) + bare clone → `repos/<repo-id>/.bare` + list cloned repos.                                                                                                                                                                                                                                                                                                                                                        |
 | 4     | `worktree-management` ✅ _archived_                                    | switch-feature    | Create worktree + branch → `repos/<repo-id>/worktrees/<wt-id>`; canonical ID scheme; "branch exists on remote" vs "new branch".                                                                                                                                                                                                                                                                                                                 |
 | 5     | `claude-session-launch` ✅ _archived_                                  | switch-feature    | Launch `claude --remote-control` detached in tmux; list/track sessions via the path-safe naming scheme.                                                                                                                                                                                                                                                                                                                                         |
-| 6     | `runtime-cli-docker`                                                   | switch-feature    | TypeScript `switchboard` CLI, `~/.switchboard` config, Docker image, Tailscale bring-up — **productionizing the spike-0 findings**.                                                                                                                                                                                                                                                                                                             |
+| 6     | `runtime-cli-docker` ✅ _archived_                                     | switch-feature    | TypeScript `switchboard` CLI, `~/.switchboard` config, Docker image, Tailscale bring-up — **productionizing the spike-0 findings**.                                                                                                                                                                                                                                                                                                             |
 
 **Dependencies**
 
