@@ -4,17 +4,6 @@ import type { MiddlewareHandler } from 'hono';
 import type { RuntimeContext } from '@switchboard/shared';
 import type { AppEnv } from './app.js';
 
-/** Tailscale CGNAT range `100.64.0.0/10` — serve injects a CGNAT `x-forwarded-for`. */
-function isCgnatAddress(xff: string | undefined): boolean {
-  if (!xff) return false;
-  const ip = xff.split(',')[0]?.trim() ?? '';
-  const m = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(ip);
-  if (!m) return false;
-  const a = Number(m[1]);
-  const b = Number(m[2]);
-  return a === 100 && b >= 64 && b <= 127;
-}
-
 /** Constant-time credential comparison (avoids leaking the token via timing). */
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -65,14 +54,17 @@ export function serveIngressTrust(ctx: RuntimeContext): IngressTrust {
  * Rules (`runtime-cli-docker` Decision 3 hardens foundations Decision 3):
  * - **Identity eligibility is the bind-time `ingress` flag, not the headers.** The identity path
  *   is consulted ONLY when `ingress.identityEligible` is true (i.e. this is the dedicated serve
- *   ingress, with trust enabled and the runtime asserting no host publication). The serve markers
- *   (`tailscale-user-login` + `tailscale-headers-info` + CGNAT `x-forwarded-for`) remain a
- *   defence-in-depth check on that ingress but are no longer the basis of trust.
+ *   ingress, with trust enabled and the runtime asserting no host publication). Admission then
+ *   depends solely on an allowlisted `tailscale-user-login` — the one identity header `tailscale
+ *   serve` actually injects. No other "serve marker" is required (real serve does not emit a
+ *   `tailscale-headers-info` header, nor a CGNAT forwarding address here), so a genuine tokenless
+ *   served-SPA request is admitted rather than wrongly rejected.
  * - On an identity-eligible ingress an allowlisted identity is admitted without a bearer token; a
- *   non-allowlisted one is forbidden (403).
- * - The bearer path is always available and is the ONLY path on every non-eligible ingress
- *   (including the direct/local loopback ingress always, and any ingress when trust is off).
- *   `tailscale-user-*` headers are never consulted there, so forged identity headers admit nothing.
+ *   present-but-non-allowlisted identity (with no valid bearer) is forbidden (403) and logged.
+ * - The bearer path is always available — the ONLY path on every non-eligible ingress, and kept
+ *   ahead of the identity 403 on the eligible one so a valid bearer is never shadowed. On a
+ *   non-eligible ingress `tailscale-user-*` headers are never consulted, so forged identity
+ *   headers admit nothing.
  */
 export function authMiddleware(
   ctx: RuntimeContext,
@@ -82,23 +74,19 @@ export function authMiddleware(
   return async (c, next) => {
     if (c.req.path === '/health') return next();
 
-    const login = c.req.header('tailscale-user-login');
-    const headersInfo = c.req.header('tailscale-headers-info');
-    const forwardedFor = c.req.header('x-forwarded-for');
-    const hasServeMarkers = Boolean(login && headersInfo && isCgnatAddress(forwardedFor));
-
-    // Identity path — only on an identity-eligible ingress (a bind-time property), AND when the
-    // serve markers select it as defence-in-depth.
-    if (ingress.identityEligible && hasServeMarkers) {
-      if (login && cfg.identityAllowlist.includes(login)) {
-        c.set('identity', { login, source: 'serve' });
-        return next();
-      }
-      return c.json({ error: 'forbidden' }, 403);
+    // Identity path — admitted purely on the bind-time ingress property plus an allowlisted
+    // `tailscale-user-login` (the sole identity header `tailscale serve` actually injects). No
+    // dependence on a `tailscale-headers-info` header (serve does not emit one) or a CGNAT
+    // `x-forwarded-for`, so a real tokenless served-SPA request is admitted rather than 401'd.
+    const login = ingress.identityEligible ? c.req.header('tailscale-user-login') : undefined;
+    if (login && cfg.identityAllowlist.includes(login)) {
+      c.set('identity', { login, source: 'serve' });
+      return next();
     }
 
-    // Bearer path — always available; the only path on a non-eligible ingress. `tailscale-user-*`
-    // headers are never consulted here, so forged identity headers cannot admit a request.
+    // Bearer path — always available; the only path on a non-eligible ingress. Kept ahead of any
+    // identity denial so a valid bearer token is never shadowed by a non-allowlisted serve login.
+    // `tailscale-user-*` headers are never consulted here, so forged identity headers admit nothing.
     const authorization = c.req.header('authorization');
     const token = authorization?.startsWith('Bearer ')
       ? authorization.slice('Bearer '.length)
@@ -106,6 +94,13 @@ export function authMiddleware(
     if (token && safeEqual(token, cfg.bearerToken)) {
       c.set('identity', { login: null, source: 'bearer' });
       return next();
+    }
+
+    // A present-but-non-allowlisted serve login (with no valid bearer) is forbidden, and logged so
+    // an operator can see they must add it to `identityAllowlist` — the login is not a secret.
+    if (login) {
+      ctx.logger.warn('serve identity not in allowlist; denying request', { login });
+      return c.json({ error: 'forbidden' }, 403);
     }
 
     return c.json({ error: 'unauthorized' }, 401);

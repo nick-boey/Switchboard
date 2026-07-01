@@ -27,8 +27,12 @@ type Source = 'github' | 'local';
 type Method = 'select' | 'url';
 
 export interface NewRepositoryViewProps {
-  /** The repo-list response; `undefined` while the query is loading. */
+  /** The repo-list response; `undefined` while the query is loading OR when it errored. */
   listing: RepoListResponse | undefined;
+  /** The repo-list fetch failed (distinct from still-loading) — render the error state. */
+  error?: boolean;
+  /** Retry the repo-list fetch from the error state. */
+  onRetry?: () => void;
   onClone?: (repoId: string) => void;
   // Seed initial UI state (stories/tests).
   initialSource?: Source;
@@ -227,6 +231,8 @@ function LocalRepo() {
 
 export function NewRepositoryView({
   listing,
+  error,
+  onRetry,
   onClone,
   initialSource = 'github',
   initialMethod = 'select',
@@ -266,6 +272,20 @@ export function NewRepositoryView({
       />
       {source === 'local' ? (
         <LocalRepo />
+      ) : error ? (
+        <Card title="GitHub" data-testid="github-error">
+          <Stack gap={8}>
+            <Group gap={8} wrap="nowrap" align="flex-start">
+              <StatusLight tone="red" size={11} label="error" />
+              <Text fz="sm" c="dimmed">
+                Couldn’t reach GitHub. Check your connection and try again.
+              </Text>
+            </Group>
+            <Button intent="primary" onClick={onRetry} data-testid="github-retry">
+              Retry
+            </Button>
+          </Stack>
+        </Card>
       ) : listing === undefined ? (
         <Card title="GitHub" data-testid="github-loading">
           <Group gap={8} wrap="nowrap">
@@ -323,5 +343,12 @@ export function NewRepository({ client: injected, onClone }: NewRepositoryProps)
       return res.json();
     },
   });
-  return <NewRepositoryView listing={repos.data} onClone={onClone} />;
+  return (
+    <NewRepositoryView
+      listing={repos.data}
+      error={repos.isError}
+      onRetry={() => void repos.refetch()}
+      onClone={onClone}
+    />
+  );
 }

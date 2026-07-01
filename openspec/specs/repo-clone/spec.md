@@ -222,7 +222,11 @@ and MUST specify their empty, in-progress, and error states. The New repository 
 a GitHub source (with Local disabled for the MVP) and either Select repository (validated,
 editable owner and repository selectors, where the owner options include the authenticated
 user's own account and their organisations) or From URL (validated); the getting-ready screen
-renders the clone's in-progress, error, and ready states. Both adapt to mobile and desktop.
+renders the clone's in-progress, error, and ready states. The New repository screen's GitHub
+source MUST distinguish three outcomes of loading the repository list — an in-progress
+(connecting) state, a **failed-fetch error** state, and the resolved states (the not-configured
+empty state or the ready selectors) — and MUST NOT remain in the connecting state indefinitely
+when the repository-list request fails. Both adapt to mobile and desktop.
 
 #### Scenario: Local source is disabled
 
@@ -274,4 +278,13 @@ renders the clone's in-progress, error, and ready states. Both adapt to mobile a
 - **WHEN** the New repository screen is shown and no GitHub PAT is configured
 - **THEN** it shows an empty/unconfigured state prompting the user to add a PAT to
   `~/.switchboard`, rather than failing opaquely
+
+#### Scenario: GitHub repository-list fetch failure shows an error state (regression)
+
+- **WHEN** the New repository screen's GitHub repository-list request fails to resolve (for
+  example the `/api/repos/github` call errors with a non-OK status such as `401`, or the network
+  request fails)
+- **THEN** the screen shows an explicit error state — distinct from the connecting/loading state
+  and from the not-configured empty state — offering a retry, rather than remaining on
+  "Connecting to GitHub…" indefinitely
 
