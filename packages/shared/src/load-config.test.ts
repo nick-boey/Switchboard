@@ -29,7 +29,8 @@ describe('loadConfig', () => {
     expect(cfg.bearerToken.length).toBeGreaterThan(16);
     expect(cfg.trustServeIdentity).toBe(false);
     expect(cfg.telemetry.exporter).toBe('none');
-    expect(cfg.identityAllowlist).toContain('nick-boey@github');
+    // serve-web-spa F1: first-run default allowlist is empty (no baked-in identity).
+    expect(cfg.identityAllowlist).toEqual([]);
 
     // Token actually persisted to disk.
     const onDisk = JSON.parse(readFileSync(file, 'utf8'));

@@ -8,6 +8,14 @@ import { type AppConfig, configSchema } from './config.js';
 export interface LoadConfigOptions {
   /** Config directory; defaults to `~/.switchboard`. Tests pass a temp dir. */
   configDir?: string;
+  /**
+   * Extra config fields applied **only when creating** a config on first run — never when loading an
+   * existing one (serve-web-spa F1/D6). The `--docker` bootstrap uses this to write
+   * `trustServeIdentity: true` into a freshly created config; an existing config's persisted values
+   * (or their schema defaults for absent fields) are always respected, so a pre-existing container is
+   * never silently upgraded to trust.
+   */
+  firstRunDefaults?: Partial<AppConfig>;
 }
 
 /**
@@ -24,7 +32,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   const configPath = join(configDir, 'config.json');
 
   if (!existsSync(configPath)) {
-    return createDefaultConfig(configDir, configPath);
+    return createDefaultConfig(configDir, configPath, options.firstRunDefaults);
   }
 
   let raw: unknown;
@@ -41,9 +49,16 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   return result.data;
 }
 
-function createDefaultConfig(configDir: string, configPath: string): AppConfig {
+function createDefaultConfig(
+  configDir: string,
+  configPath: string,
+  firstRunDefaults?: Partial<AppConfig>,
+): AppConfig {
   mkdirSync(configDir, { recursive: true, mode: 0o700 });
-  const defaults = configSchema.parse({ bearerToken: randomBytes(32).toString('hex') });
+  const defaults = configSchema.parse({
+    bearerToken: randomBytes(32).toString('hex'),
+    ...firstRunDefaults,
+  });
   writeFileSync(configPath, `${JSON.stringify(defaults, null, 2)}\n`, { mode: 0o600 });
   // Defensive: enforce 600 even if a permissive umask widened the create mode.
   chmodSync(configPath, 0o600);

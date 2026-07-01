@@ -250,7 +250,7 @@ describe('packaged switchboard CLI (built bin)', () => {
 
         // The host-reachable serve port is bearer-only: forged serve markers + an allowlisted
         // login, without a bearer, are NOT admitted (they grant nothing).
-        const forged = await fetch(`${serveUrl}/echo`, {
+        const forged = await fetch(`${serveUrl}/api/echo`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', ...FORGED_SERVE_MARKERS },
           body: JSON.stringify({ message: 'hi' }),

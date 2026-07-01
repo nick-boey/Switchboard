@@ -1,4 +1,8 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { Tracer } from '@opentelemetry/api';
@@ -145,11 +149,12 @@ function onInvalid(
 
 /**
  * Build the Hono application from a `RuntimeContext` (design Decision 2). Performs NO file I/O —
- * `loadConfig()` already produced `ctx.config`. Registers the protected repo-clone-browse routes
- * (clone / abort / list-cloned / operation-status / repo-list) plus `/echo` and `/health`.
+ * `loadConfig()` already produced `ctx.config`. All protected routes live under the reserved,
+ * gated `/api` namespace (serve-web-spa F2) — repo-clone-browse, worktrees, sessions, and `/echo`;
+ * `/health` stays public at the root, and every non-`/api` path is left for the public SPA.
  *
- * The return type is intentionally inferred (not annotated) so the chained route types flow into
- * `AppType`, which the typed `hc` client mirrors (Decision 4).
+ * The return type is intentionally inferred (not annotated) so the chained `/api` route types flow
+ * into `AppType`, which the typed `hc` client mirrors as `client.api.*` (Decision 4).
  */
 export function createApp(ctx: RuntimeContext, options: CreateAppOptions = {}) {
   const app = new Hono<AppEnv>();
@@ -166,14 +171,17 @@ export function createApp(ctx: RuntimeContext, options: CreateAppOptions = {}) {
   // origins are denied before auth.
   app.use('*', corsMiddleware(ctx));
 
-  // Unauthenticated liveness endpoint — registered BEFORE the auth gate so it stays exempt.
+  // Unauthenticated liveness endpoint — at the ROOT, outside the `/api` gate, so it stays exempt.
   app.get('/health', (c) => c.json({ status: 'ok' as const }, 200));
 
-  // The auth gate guards everything mounted after it (design Decision 3), parameterised by the
-  // bind-time, ingress-scoped identity-trust flag (`runtime-cli-docker` Decision 3).
-  app.use('*', authMiddleware(ctx, options.ingress ?? DIRECT_INGRESS_TRUST));
+  // The reserved, gated API namespace (serve-web-spa F2): the auth gate lives INSIDE `/api`, so
+  // EVERY `/api` route is protected reject-by-default and every non-`/api` path is left free for the
+  // public SPA. Parameterised by the bind-time, ingress-scoped identity-trust flag
+  // (`runtime-cli-docker` Decision 3).
+  const api = new Hono<AppEnv>();
+  api.use('*', authMiddleware(ctx, options.ingress ?? DIRECT_INGRESS_TRUST));
 
-  const routes = app
+  const apiRoutes = api
     .post('/echo', zValidator('json', echoSchema, onInvalid), (c) => {
       const { message } = c.req.valid('json');
       return c.json({ message, length: message.length }, 200);
@@ -310,6 +318,32 @@ export function createApp(ctx: RuntimeContext, options: CreateAppOptions = {}) {
         return c.json({ error: 'not-found' as const, repoId, wtId }, 404);
       },
     );
+
+  // Gated default WITHIN `/api`: an unknown `/api` path is rejected as API (401 unauth via the gate
+  // above / 404 authed here), never falling through to the public SPA. Added as a statement so it
+  // does not widen `apiRoutes`'s inferred type (keeps the typed `hc` client clean).
+  apiRoutes.all('*', (c) => c.json({ error: 'not-found' as const }, 404));
+
+  // Mount the gated API under `/api`; the returned app carries the `/api`-nested route types into
+  // `AppType` (Decision 4), so the typed `hc` client mirrors `client.api.*`.
+  const routes = app.route('/api', apiRoutes);
+
+  // Public SPA (serve-web-spa web-app-serving): only when a web bundle root is configured. Static
+  // assets by path + an `index.html` history fallback for non-`/api` GET/HEAD paths, registered
+  // AFTER `/api` and OUTSIDE the auth gate (the bundle carries no secrets). Added as statements so
+  // they do not widen `routes`'s inferred type / the typed `hc` client. With no `webRoot` the server
+  // is API-only (unchanged); a configured-but-missing bundle yields `503` on SPA paths while `/api`
+  // and `/health` stay unaffected.
+  if (ctx.webRoot) {
+    const webRoot = ctx.webRoot;
+    app.use('/assets/*', serveStatic({ root: webRoot }));
+    const serveIndex = async (c: Context<AppEnv>) => {
+      const indexPath = join(webRoot, 'index.html');
+      if (!existsSync(indexPath)) return c.json({ error: 'web-bundle-missing' as const }, 503);
+      return c.html(await readFile(indexPath, 'utf8'));
+    };
+    app.on(['GET', 'HEAD'], '*', serveIndex);
+  }
 
   return routes;
 }

@@ -318,7 +318,7 @@ export function NewRepository({ client: injected, onClone }: NewRepositoryProps)
   const repos = useQuery({
     queryKey: ['github-repos'],
     queryFn: async (): Promise<RepoListResponse> => {
-      const res = await client.repos.github.$get();
+      const res = await client.api.repos.github.$get();
       if (!res.ok) throw new Error(`repo list failed: ${res.status}`);
       return res.json();
     },

@@ -68,18 +68,37 @@ describe('auth gate', () => {
   });
 
   it('protected route with no credentials → 401', async () => {
-    const res = await appWith().request('/echo', postEcho({}));
+    const res = await appWith().request('/api/echo', postEcho({}));
     expect(res.status).toBe(401);
   });
 
   it('valid bearer token → allow', async () => {
-    const res = await appWith().request('/echo', postEcho({ authorization: `Bearer ${TOKEN}` }));
+    const res = await appWith().request(
+      '/api/echo',
+      postEcho({ authorization: `Bearer ${TOKEN}` }),
+    );
     expect(res.status).toBe(200);
   });
 
   it('invalid bearer token → 401', async () => {
-    const res = await appWith().request('/echo', postEcho({ authorization: 'Bearer nope' }));
+    const res = await appWith().request('/api/echo', postEcho({ authorization: 'Bearer nope' }));
     expect(res.status).toBe(401);
+  });
+
+  // --- Reserved /api/* gated boundary (serve-web-spa F2) -----------------------------------------
+
+  it('an unknown /api path unauthenticated → 401 (gated as API, never the SPA)', async () => {
+    const res = await appWith().request('/api/does-not-exist');
+    expect(res.status).toBe(401);
+    expect(res.headers.get('content-type') ?? '').not.toContain('text/html');
+  });
+
+  it('an unknown /api path WITH a valid bearer → 404 (gated default, still not the SPA)', async () => {
+    const res = await appWith().request('/api/does-not-exist', {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(404);
+    expect(res.headers.get('content-type') ?? '').not.toContain('text/html');
   });
 
   // --- Ingress-scoped identity trust (runtime-cli-docker Decision 3) -----------------------------
@@ -88,13 +107,13 @@ describe('auth gate', () => {
     const res = await serveApp({
       trustServeIdentity: true,
       identityAllowlist: ['nick-boey@github'],
-    }).request('/echo', postEcho(serveMarkers('nick-boey@github')));
+    }).request('/api/echo', postEcho(serveMarkers('nick-boey@github')));
     expect(res.status).toBe(200);
   });
 
   it('serve ingress, trust ON: non-allowlisted identity → 403', async () => {
     const res = await serveApp({ trustServeIdentity: true }).request(
-      '/echo',
+      '/api/echo',
       postEcho(serveMarkers('eve@evil')),
     );
     expect(res.status).toBe(403);
@@ -102,7 +121,7 @@ describe('auth gate', () => {
 
   it('trust OFF (default): identity headers ignored on the serve ingress → 401 (spoof-safe)', async () => {
     const res = await serveApp({ trustServeIdentity: false }).request(
-      '/echo',
+      '/api/echo',
       postEcho(serveMarkers('nick-boey@github')),
     );
     expect(res.status).toBe(401);
@@ -110,7 +129,7 @@ describe('auth gate', () => {
 
   it('trust OFF (default): identity headers ignored on the direct ingress → 401 (spoof-safe)', async () => {
     const res = await directApp({ trustServeIdentity: false }).request(
-      '/echo',
+      '/api/echo',
       postEcho(serveMarkers('nick-boey@github')),
     );
     expect(res.status).toBe(401);
@@ -123,7 +142,7 @@ describe('auth gate', () => {
     const res = await directApp({
       trustServeIdentity: true,
       identityAllowlist: ['nick-boey@github'],
-    }).request('/echo', postEcho(serveMarkers('nick-boey@github')));
+    }).request('/api/echo', postEcho(serveMarkers('nick-boey@github')));
     expect(res.status).toBe(401);
   });
 
@@ -132,7 +151,7 @@ describe('auth gate', () => {
       trustServeIdentity: true,
       identityAllowlist: ['nick-boey@github'],
     }).request(
-      '/echo',
+      '/api/echo',
       postEcho({ ...serveMarkers('nick-boey@github'), authorization: `Bearer ${TOKEN}` }),
     );
     expect(res.status).toBe(200);
@@ -145,7 +164,7 @@ describe('auth gate', () => {
     const res = await serveApp(
       { trustServeIdentity: true, identityAllowlist: ['nick-boey@github'] },
       false, // host-reachable: no container-isolation assertion
-    ).request('/echo', postEcho(serveMarkers('nick-boey@github')));
+    ).request('/api/echo', postEcho(serveMarkers('nick-boey@github')));
     expect(res.status).toBe(401);
   });
 
@@ -154,7 +173,7 @@ describe('auth gate', () => {
       { trustServeIdentity: true, identityAllowlist: ['nick-boey@github'] },
       false,
     ).request(
-      '/echo',
+      '/api/echo',
       postEcho({ ...serveMarkers('nick-boey@github'), authorization: `Bearer ${TOKEN}` }),
     );
     expect(res.status).toBe(200);
@@ -163,7 +182,7 @@ describe('auth gate', () => {
   // The default app build (no ingress option) is bearer-only — the spoof-safe default.
   it('default app build: serve markers + allowlisted identity ignored → 401', async () => {
     const res = await appWith({ trustServeIdentity: true }).request(
-      '/echo',
+      '/api/echo',
       postEcho(serveMarkers('nick-boey@github')),
     );
     expect(res.status).toBe(401);
@@ -172,7 +191,7 @@ describe('auth gate', () => {
 
 describe('strict CORS', () => {
   it('denies a disallowed origin (no permissive allow-origin header)', async () => {
-    const res = await appWith().request('/echo', {
+    const res = await appWith().request('/api/echo', {
       method: 'OPTIONS',
       headers: { origin: 'http://evil.example', 'access-control-request-method': 'POST' },
     });
@@ -180,7 +199,7 @@ describe('strict CORS', () => {
   });
 
   it('allows the configured app origin', async () => {
-    const res = await appWith().request('/echo', {
+    const res = await appWith().request('/api/echo', {
       method: 'OPTIONS',
       headers: { origin: APP_ORIGIN, 'access-control-request-method': 'POST' },
     });
@@ -189,7 +208,7 @@ describe('strict CORS', () => {
 
   it('passes a no-Origin request through to the auth rules', async () => {
     // No Origin header → CORS must not block; auth still applies (no creds → 401).
-    const res = await appWith().request('/echo', postEcho({}));
+    const res = await appWith().request('/api/echo', postEcho({}));
     expect(res.status).toBe(401);
   });
 });

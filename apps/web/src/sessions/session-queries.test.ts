@@ -28,49 +28,51 @@ function fakeClient(overrides: {
   let statusArg: unknown;
   const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
   const client = {
-    sessions: {
-      launch: {
-        $post: async (arg: { json: unknown }) => {
-          launchArg = arg.json;
-          return overrides.launch
-            ? overrides.launch(arg.json)
-            : ok({ repoId: 'session/acme/infra/x', operationId: 'op-1', status: 'starting' });
+    api: {
+      sessions: {
+        launch: {
+          $post: async (arg: { json: unknown }) => {
+            launchArg = arg.json;
+            return overrides.launch
+              ? overrides.launch(arg.json)
+              : ok({ repoId: 'session/acme/infra/x', operationId: 'op-1', status: 'starting' });
+          },
         },
-      },
-      stop: {
-        $post: async (arg: { json: unknown }) => {
-          stopArg = arg.json;
-          return overrides.stop ? overrides.stop(arg.json) : ok({ status: 'stopped' });
+        stop: {
+          $post: async (arg: { json: unknown }) => {
+            stopArg = arg.json;
+            return overrides.stop ? overrides.stop(arg.json) : ok({ status: 'stopped' });
+          },
         },
-      },
-      ':owner': {
-        ':repo': {
-          $get: async () =>
-            overrides.list
-              ? overrides.list()
-              : ok({
-                  repoId: 'acme/infra',
-                  sessions: [
-                    {
-                      repoId: 'acme/infra',
-                      wtId: 'a--0123456789ab',
-                      status: 'on',
-                      bridgeSessionId: 'session_01ResolvedSessionA',
-                    },
-                    { repoId: 'acme/infra', wtId: 'b--abcdef012345', status: 'on' },
-                  ],
-                }),
-          ':wtId': {
-            status: {
-              $get: async (arg: { param: unknown }) => {
-                statusArg = arg.param;
-                return overrides.status
-                  ? overrides.status()
-                  : ok({
-                      repoId: 'session/acme/infra/x--0123456789ab',
-                      operationId: 'op-1',
-                      status: 'ready',
-                    });
+        ':owner': {
+          ':repo': {
+            $get: async () =>
+              overrides.list
+                ? overrides.list()
+                : ok({
+                    repoId: 'acme/infra',
+                    sessions: [
+                      {
+                        repoId: 'acme/infra',
+                        wtId: 'a--0123456789ab',
+                        status: 'on',
+                        bridgeSessionId: 'session_01ResolvedSessionA',
+                      },
+                      { repoId: 'acme/infra', wtId: 'b--abcdef012345', status: 'on' },
+                    ],
+                  }),
+            ':wtId': {
+              status: {
+                $get: async (arg: { param: unknown }) => {
+                  statusArg = arg.param;
+                  return overrides.status
+                    ? overrides.status()
+                    : ok({
+                        repoId: 'session/acme/infra/x--0123456789ab',
+                        operationId: 'op-1',
+                        status: 'ready',
+                      });
+                },
               },
             },
           },

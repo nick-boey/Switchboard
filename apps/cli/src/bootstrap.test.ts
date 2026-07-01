@@ -96,4 +96,46 @@ describe('bootstrap', () => {
     expect(result.config.trustServeIdentity).toBe(false);
     expect(result.config.listen.serve).toEqual({ port: 4180 });
   });
+
+  // --- serve-web-spa F1: `--docker` first-run trust default (D6, upgrade-safe per F-A1) ----------
+
+  it('first-run --docker: creates config with trustServeIdentity ON + an EMPTY allowlist (admits nobody)', () => {
+    const configDir = freshConfigDir();
+    const result = bootstrap({ configDir, assertNoHostPublication: true });
+    expect(result.config.trustServeIdentity).toBe(true);
+    expect(result.config.identityAllowlist).toEqual([]);
+    // The default is persisted into the newly created config.
+    const onDisk = JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8'));
+    expect(onDisk.trustServeIdentity).toBe(true);
+  });
+
+  it('existing --docker config WITHOUT the trust field is NOT upgraded (trust off; persisted allowlist untouched)', () => {
+    const configDir = freshConfigDir();
+    bootstrap({ configDir }); // baseline
+    // Simulate a config provisioned before this change: no trust field, a persisted allowlist.
+    const cfg = JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8'));
+    delete cfg.trustServeIdentity;
+    cfg.identityAllowlist = ['legacy@github'];
+    writeFileSync(join(configDir, 'config.json'), JSON.stringify(cfg));
+
+    const result = bootstrap({ configDir, assertNoHostPublication: true });
+    expect(result.config.trustServeIdentity).toBe(false); // first-run default never applies on load
+    expect(result.config.identityAllowlist).toEqual(['legacy@github']); // untouched
+  });
+
+  it('existing --docker config with an explicit trustServeIdentity:false is respected', () => {
+    const configDir = freshConfigDir();
+    bootstrap({ configDir });
+    const cfg = JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8'));
+    cfg.trustServeIdentity = false;
+    writeFileSync(join(configDir, 'config.json'), JSON.stringify(cfg));
+    const result = bootstrap({ configDir, assertNoHostPublication: true });
+    expect(result.config.trustServeIdentity).toBe(false);
+  });
+
+  it('non-docker first-run defaults trust OFF', () => {
+    const configDir = freshConfigDir();
+    const result = bootstrap({ configDir });
+    expect(result.config.trustServeIdentity).toBe(false);
+  });
 });

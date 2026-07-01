@@ -91,7 +91,7 @@ describe('repo routes + typed client', () => {
   it('clone: rejects invalid input with 422 without invoking the handler', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.repos.clone.$post({ json: { target: '../evil' } });
+    const res = await client.api.repos.clone.$post({ json: { target: '../evil' } });
     expect(res.status).toBe(422);
     expect(fake.calls.start).toBe(0);
   });
@@ -99,7 +99,7 @@ describe('repo routes + typed client', () => {
   it('clone: starts a clone and returns the cloning status', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.repos.clone.$post({ json: { target: 'acme/infra' } });
+    const res = await client.api.repos.clone.$post({ json: { target: 'acme/infra' } });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ repoId: 'acme/infra', status: 'cloning' });
     expect(fake.calls.start).toBe(1);
@@ -108,7 +108,7 @@ describe('repo routes + typed client', () => {
   it('abort: rejects a malformed repoId with 422 without invoking the handler', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.repos.abort.$post({ json: { repoId: '../evil' } });
+    const res = await client.api.repos.abort.$post({ json: { repoId: '../evil' } });
     expect(res.status).toBe(422);
     expect(fake.calls.abort).toBe(0);
   });
@@ -116,7 +116,7 @@ describe('repo routes + typed client', () => {
   it('abort: aborts an in-flight clone and responds with the aborted status', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.repos.abort.$post({ json: { repoId: 'acme/infra' } });
+    const res = await client.api.repos.abort.$post({ json: { repoId: 'acme/infra' } });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'aborted' });
   });
@@ -125,7 +125,7 @@ describe('repo routes + typed client', () => {
     const fake = makeFake();
     fake.abortResult = { repoId: 'acme/infra', operationId: 'op-1', status: 'ready' };
     const client = await boot(fake.orchestrator);
-    const res = await client.repos.abort.$post({ json: { repoId: 'acme/infra' } });
+    const res = await client.api.repos.abort.$post({ json: { repoId: 'acme/infra' } });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'ready' });
   });
@@ -135,7 +135,7 @@ describe('repo routes + typed client', () => {
     fake.abortResult = null;
     fake.statusResult = null;
     const client = await boot(fake.orchestrator);
-    const res = await client.repos.abort.$post({ json: { repoId: 'ghost/repo' } });
+    const res = await client.api.repos.abort.$post({ json: { repoId: 'ghost/repo' } });
     expect(res.status).toBe(404);
   });
 
@@ -143,7 +143,7 @@ describe('repo routes + typed client', () => {
     const fake = makeFake();
     fake.statusResult = { repoId: 'acme/infra', operationId: 'op-1', status: 'ready' };
     const client = await boot(fake.orchestrator);
-    const ok = await client.repos[':owner'][':repo'].status.$get({
+    const ok = await client.api.repos[':owner'][':repo'].status.$get({
       param: { owner: 'acme', repo: 'infra' },
     });
     expect(ok.status).toBe(200);
@@ -153,7 +153,7 @@ describe('repo routes + typed client', () => {
   it('cloned: lists completed clones', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.repos.cloned.$get();
+    const res = await client.api.repos.cloned.$get();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ repos: [{ owner: 'acme', repo: 'infra' }] });
   });
@@ -166,7 +166,7 @@ describe('repo routes + typed client', () => {
       repositories: [{ owner: 'acme', name: 'infra' }],
     };
     const client = await boot(fake.orchestrator);
-    const res = await client.repos.github.$get();
+    const res = await client.api.repos.github.$get();
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'ok' });
   });
@@ -197,7 +197,7 @@ describe('repo routes + typed client', () => {
     const client = createServerClient(handle.url, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const res = await client.repos.github.$get();
+    const res = await client.api.repos.github.$get();
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: 'unauthorized' });
   });

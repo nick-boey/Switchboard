@@ -20,7 +20,7 @@ slice from the CLI through the server to the web shell. Concretely:
 
 - `apps/server` builds a Hono app from a `RuntimeContext` and exposes
   `start(ctx): Promise<ServerHandle>`, which binds a loopback-only (`127.0.0.1`) server. It
-  serves an unauthenticated `GET /health` plus one placeholder `POST /echo` route behind a
+  serves an unauthenticated `GET /health` plus one placeholder `POST /api/echo` route behind a
   reject-by-default auth gate (the bearer token path is always available; a Tailscale serve
   identity is trusted only when explicitly enabled) and OpenTelemetry instrumentation that
   redacts secrets before export (exporter `none` by default).
@@ -124,16 +124,19 @@ switchboard --version
 ```
 
 A local `start` binds `127.0.0.1` only and is **bearer-only** — it serves an unauthenticated
-`GET /health` plus the placeholder `POST /echo` route behind the reject-by-default auth gate
+`GET /health` plus the placeholder `POST /api/echo` route behind the reject-by-default auth gate
 (authenticate with the bearer token from `~/.switchboard/config.json`):
 
 ```sh
 curl http://127.0.0.1:PORT/health    # -> {"status":"ok"} (substitute the printed port)
 ```
 
-To **run on the tailnet (Docker)** — the image brings up userspace Tailscale and exposes the app via
-`tailscale serve` over a dedicated, non-host-published loopback serve port, with named volumes and
-mounted secrets — see **[`docs/user/running-switchboard.md`](docs/user/running-switchboard.md)**.
+To **run on the tailnet (Docker)** — the image **bundles and serves the web UI** and brings up
+userspace Tailscale, exposing the app via `tailscale serve` over a dedicated, non-host-published
+loopback serve port, with named volumes and mounted secrets. Open
+`https://switchboard.<your-tailnet>.ts.net/` on your phone to use it (no separate web host; the
+served SPA is authorised tokenlessly by your Tailscale identity). See
+**[`docs/user/running-switchboard.md`](docs/user/running-switchboard.md)**.
 
 From a workspace checkout you can also run the bin straight from the build output:
 

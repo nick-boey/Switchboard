@@ -131,6 +131,35 @@
       named-volume mount points (tailscale state, `~/.switchboard`, `~/.claude`) and the mounted
       secrets (GitHub PAT, Tailscale auth key). (Real bring-up is validated by the manual runtime check
       in task 11.1, not CI.)
+- [x] 9.2 (gap surfaced by the 11.1 manual check) Install the **`claude` CLI** in the Dockerfile
+      **runtime** stage so the in-container login and the orchestrator's bare-`claude`
+      `--remote-control` launches resolve (per `container-runtime` → "The runtime image includes the
+      Claude CLI"): add `ripgrep` to the runtime `apk` line (Claude Code's file search) and a pinned
+      global install with lifecycle scripts permitted —
+      `npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@<pin>`
+      (npm 11 skips dependency postinstall by default). Extend the in-image smoke (cf. task 11.1 image
+      check) to assert `claude --version` runs in the built image. Verified on `node:26-alpine`:
+      installs + `claude --version`/`--help` run, no base-image change needed.
+      - **Done 2026-06-30.** Dockerfile runtime stage now installs
+        `@anthropic-ai/claude-code@2.1.196` (scripts allow-listed) + `ripgrep`; image rebuilt
+        (`switchboard:11-1-verify`) and in-image smoke GREEN — `claude --version` → 2.1.196,
+        `rg --version` → ripgrep 15.1.0, `switchboard --version` → 0.0.0, all on `PATH`, all exit 0.
+        Discharges the `container-runtime` "The runtime image includes the Claude CLI" requirement.
+      - **Hardening 2026-07-01 (restart-stability bug).** The manual check found `claude` intermittently
+        unresolvable after a `docker restart`: Claude Code's launch-time auto-updater mutates/migrates the
+        bundled `claude.exe` at runtime (traces on the persisted `~/.claude` volume — `.update.lock`,
+        config backups). Fixed by baking `ENV DISABLE_AUTOUPDATER=1` (immutable pinned install; the
+        documented lever, also present in the build) + `USE_BUILTIN_RIPGREP=0` (use the apk musl
+        `ripgrep`). Covers the new `container-runtime` scenario "The pinned CLI does not self-update at
+        runtime". Note: recreate the container from the rebuilt image to pick up the env — a
+        `docker restart` will not.
+      - **Build-time smoke baked in (2026-07-01, Implementation-review kernel).** Added
+        `RUN claude --version && rg --version` to the Dockerfile so the image build itself fails loudly
+        if the pinned CLI / search tool is ever not runnable (the promise is now a build invariant, not a
+        manual post-build check). The `--allow-scripts` install was verified correct — it is npm 11.17's
+        own recommended flag (npm prints the suggestion; `--allow-scripts` is recognised, postinstall
+        runs, and `claude` runs even if it is skipped). Codex's "unsupported npm flag" finding was a
+        false positive from testing the local Mac npm rather than the image's npm 11.17.
 
 ## 10. Docs: planned-architecture overlay + runtime guide + README (docs-migration rows)
 
@@ -152,18 +181,29 @@
 
 ## 11. Verification gate
 
-- [ ] 11.1 Run `just test`, `just lint`, `just typecheck`, then `just build` + `just e2e` — all green;
+- [x] 11.1 Run `just test`, `just lint`, `just typecheck`, then `just build` + `just e2e` — all green;
       perform the **manual runtime check** following `docs/user/running-switchboard.md` (Docker +
       userspace Tailscale bring-up, `tailscale serve` → the dedicated loopback serve port, in-container
       `claude` login + `~/.claude`
       volume, restart-without-re-auth); confirm prettier-clean and that `openspec validate
       runtime-cli-docker --strict` passes.
-      - **Automated gate: GREEN.** `just test` 417 passed / 0 failed; `eslint .` clean;
-        `prettier --check .` clean; `tsc -b` clean; `pnpm -r build` ok; `just e2e` 25 passed / 0
-        unexpected; `likec4 validate --no-layout` valid (4 files); `openspec validate
-        runtime-cli-docker --strict` valid.
-      - **Manual runtime check: NOT EXECUTED** — real Docker + Tailscale bring-up (and the
-        in-container `claude` login / restart-without-re-auth) cannot run in CI/this environment;
-        the orchestration wiring is proven against the injected `RuntimeRunner` fake (argv/order,
-        pinned `serve` invocation, the >= v1.50.0 gate, signal forwarding). A human must run the
-        Docker bring-up per the runtime guide before archive. This box stays unchecked until then.
+      - **Automated gate: GREEN (re-confirmed 2026-06-30, after the Docker image-build repair
+        `c8301c0`).** `just test` 504 passed / 0 failed; `eslint .` + `prettier --check .` clean;
+        `tsc -b` clean; `just build` (`pnpm -r build`) ok; `just e2e` 32 passed / 0 unexpected;
+        `openspec validate runtime-cli-docker --strict` valid. (Counts grew from the prior 417/25
+        as the codebase expanded; still all green.)
+      - **Image build: GREEN (2026-06-30).** `docker build` of the repaired `Dockerfile` succeeds;
+        the deployed CLI runs in-image (`switchboard --version` → `0.0.0`); `@switchboard/server`
+        (and its transitive `hono` / `@hono/node-server` / `zod` / OpenTelemetry deps) imports from
+        the deployed `/opt/switchboard` tree; the bundled `tailscale` is `1.98.5` (≥ the v1.50.0
+        floor). This discharges the `c8301c0` image-build risk; the full Tailscale bring-up below is
+        still required.
+      - **Manual runtime check: EXECUTED 2026-07-01 — PASSED.** A human ran the full bring-up on a real
+        tailnet against the rebuilt image (`switchboard:11-1-verify`): ① userspace Tailscale + the
+        supervised server came up and `tailscale serve` (HTTPS/443 → the dedicated loopback serve port)
+        proxied to the server; ② the serve URL reached the server (the root `unauthorized` is correct —
+        no SPA + trust off until serve-web-spa); ③ the in-container `claude` login completed and persisted
+        to the `~/.claude` volume; ④ restart reconnected to the tailnet without re-auth and the login
+        persisted. The check surfaced two real gaps, both fixed in-stage: the image lacked the `claude`
+        CLI (task 9.2) and Claude Code's launch-time auto-updater broke `claude` resolution across restarts
+        (9.2 hardening — `DISABLE_AUTOUPDATER=1`); re-confirmed stable after the fix.

@@ -6,19 +6,35 @@ TBD - created by archiving change foundations. Update Purpose after archive.
 ### Requirement: Reject unauthenticated requests by default
 
 The API SHALL reject any request to a protected route that presents neither a valid bearer
-credential nor a trusted Tailscale serve identity. The `GET /health` liveness endpoint
-SHALL be exempt (unauthenticated).
+credential nor a trusted Tailscale serve identity. Protected routes are exactly the
+application API under the reserved **`/api/*`** namespace; the gate applies
+reject-by-default **within** `/api` (including unknown `/api` paths, which are rejected as
+API rather than served the SPA). The `GET /health` liveness endpoint AND all non-`/api`
+paths — the public web SPA static assets and the `index.html` history fallback — SHALL be
+exempt (unauthenticated), as they carry no secrets.
 
 #### Scenario: No credentials on a protected route
 
-- **WHEN** a request to a protected route arrives with no valid bearer token and no trusted
-  serve identity
+- **WHEN** a request to a protected `/api/*` route arrives with no valid bearer token and
+  no trusted serve identity
 - **THEN** the API responds `401`
+
+#### Scenario: An unknown API path is gated, not served the SPA
+
+- **WHEN** an unauthenticated request arrives for an unknown `/api/*` path
+- **THEN** the API rejects it (`401`) and does not return the SPA shell
 
 #### Scenario: Health endpoint is exempt
 
 - **WHEN** `GET /health` is requested with no credentials
 - **THEN** the API responds `200`
+
+#### Scenario: Non-API paths are public
+
+- **WHEN** a `GET` request for a non-`/api` path (e.g. `/` or a clean SPA path) arrives
+  with no credentials
+- **THEN** the API does not reject it for auth; it serves the public SPA (per
+  `web-app-serving`)
 
 ### Requirement: Bearer-token authentication
 
@@ -38,42 +54,122 @@ The API SHALL accept requests presenting a bearer token that matches the token i
 ### Requirement: Tailscale identity authentication on the serve path
 
 The API SHALL trust the `tailscale-user-login` identity only when identity trust is enabled
-in configuration (`trustServeIdentity`) AND the request carries the Tailscale serve markers;
-a trusted, allowlisted identity is admitted without a bearer token.
+in configuration (`trustServeIdentity`) AND the request arrived on the **dedicated serve
+ingress** — the serve-exclusive loopback-TCP listener that `tailscale serve` proxies to,
+bound only inside the container's network namespace and not published to the host; a trusted,
+allowlisted identity is admitted to the protected **`/api/*`** routes without a bearer token.
+This is the **served SPA's authorisation path**: the same-origin, tokenless `/api` calls the
+served SPA makes (per `web-app-serving`) are admitted by serve identity, not by any secret in
+the browser — so a working phone session is not just the SPA shell loading but its `/api`
+calls actually succeeding under identity alone. The Tailscale serve markers
+(`tailscale-headers-info` + a CGNAT `x-forwarded-for` + `tailscale-user-login`) remain a
+defence-in-depth check on that ingress but are no longer the basis of trust — the ingress is,
+and which ingress admitted a request is a **bind-time** property, not a header inference. A
+request arriving on the direct loopback-TCP ingress SHALL never be admitted by this identity
+path, regardless of the headers it carries.
 
-#### Scenario: Allowlisted identity admitted without a bearer token
+#### Scenario: Allowlisted serve identity reaches a real /api route without a bearer token
 
-- **WHEN** `trustServeIdentity` is enabled AND a request carries the serve markers AND
-  `tailscale-user-login` is in the allowlist
-- **THEN** the request is allowed without requiring a bearer token
+- **WHEN** `trustServeIdentity` is enabled AND a request to a **real** protected `/api/*`
+  route arrives on the dedicated serve ingress carrying the serve markers and an allowlisted
+  `tailscale-user-login`, with **no** `Authorization` header
+- **THEN** the request is admitted and handled by that `/api` route (not rejected `401`/`403`),
+  so the served SPA's tokenless calls succeed
 
-#### Scenario: Non-allowlisted identity is forbidden
+#### Scenario: Non-allowlisted serve identity is forbidden on /api
 
-- **WHEN** `trustServeIdentity` is enabled AND the serve markers are present BUT
-  `tailscale-user-login` is not in the allowlist
-- **THEN** the API responds `403`
+- **WHEN** `trustServeIdentity` is enabled AND a request to an `/api/*` route arrives on the
+  dedicated serve ingress with the serve markers present BUT `tailscale-user-login` is not in
+  the allowlist (e.g. the default empty allowlist)
+- **THEN** the API responds `403` and does not handle the route
+
+#### Scenario: Identity headers on the direct loopback ingress are never trusted on /api
+
+- **WHEN** a request to an `/api/*` route carrying the full serve markers and an allowlisted
+  `tailscale-user-login` arrives on the direct loopback-TCP ingress rather than the dedicated
+  serve ingress
+- **THEN** the identity path does not admit it; it is rejected unless it carries a valid bearer
+  token
 
 ### Requirement: Identity trust requires a serve-exclusive ingress
 
-The system SHALL treat serve identity as trustworthy only under a deployment that guarantees
-`tailscale serve` is the exclusive ingress to the API. Identity trust SHALL default to
-disabled, and when disabled the API SHALL ignore `tailscale-user-*` headers regardless of
-the markers (the markers select a path; they are not proof of identity). The residual
-single-tenant spoofing risk under trust-enabled mode is accepted and mitigated by network
-isolation (see design; a Unix-domain-socket serve ingress is the deferred hardening).
+The system SHALL treat serve identity as trustworthy only on a **dedicated serve ingress**
+that `tailscale serve` proxies to and that is the exclusive ingress for serve traffic — a
+loopback-TCP listener on its own port, bound only inside the container's network namespace
+and NOT published to the host, with `tailscale serve` as its only configured proxy. Its
+trust rests on **container network isolation** (no host-published API port + serve being
+the sole proxy to it), applied as an ingress-scoped flag at **bind time**, NOT on request
+headers. A serve listener SHALL be identity-eligible ONLY when the runtime asserts it is
+not published to the host (the container/`--docker` runtime, per `container-runtime`); a
+serve listener that is host-reachable SHALL be bearer-only and never identity-eligible, so
+enabling `trustServeIdentity` cannot make a host-reachable serve port admit a forged
+identity. A configuration that pairs serve-identity trust with a serve ingress outside that
+container-isolated runtime is rejected at config/bootstrap validation (see `app-runtime`),
+so an identity-eligible serve listener is, by construction, always container-isolated.
+Identity trust SHALL default to disabled in the **mode-agnostic** configuration schema; the
+container (`--docker`) runtime — the only runtime that asserts no host publication — SHALL
+enable it **by default only at first-run config creation** (written into the newly created
+configuration), SHALL respect a persisted value when loading an existing configuration, and
+SHALL NOT flip trust on for an already-provisioned container whose configuration does not
+carry the field. The serve-identity **allowlist SHALL default to empty**, so even with trust
+enabled no identity is admitted (`403`) until an operator adds one — the allowlist, not the
+trust flag, is the effective gate; the empty default applies to newly created configurations
+and SHALL NOT rewrite an existing persisted allowlist. When trust is disabled the API SHALL
+ignore `tailscale-user-*` headers on every ingress. The direct loopback-TCP ingress SHALL be
+bearer-only: it SHALL ignore `tailscale-user-*` headers unconditionally, so a process that
+can reach the direct loopback port can no longer present a trusted identity.
 
-#### Scenario: Default mode ignores forged identity headers
+#### Scenario: A fresh container creates a config with trust on and a closed allowlist
 
-- **WHEN** `trustServeIdentity` is disabled (the default) AND a request presents the full
-  serve markers and an allowlisted `tailscale-user-login`
-- **THEN** those headers are ignored and the request is rejected unless it carries a valid
-  bearer token
+- **WHEN** a `--docker` runtime bootstraps for the **first time** (no existing config) and
+  creates `config.json`
+- **THEN** the created config has `trustServeIdentity` enabled AND `identityAllowlist`
+  empty, so the serve ingress admits no identity (`403`) until an operator adds a login
+
+#### Scenario: An existing container is not silently upgraded to trust
+
+- **WHEN** a `--docker` runtime loads an **existing** `config.json` that does not set
+  `trustServeIdentity` (e.g. one provisioned before this change, possibly carrying a
+  non-empty persisted `identityAllowlist`)
+- **THEN** identity trust remains disabled (the first-run default applies only to newly
+  created configs) and the persisted allowlist is left untouched, so no identity is admitted
+  until the operator explicitly enables trust
+
+#### Scenario: An explicit trust setting is not overridden in the container
+
+- **WHEN** a `--docker` runtime loads a configuration with `trustServeIdentity` explicitly
+  set to `false`
+- **THEN** trust stays disabled (the first-run default never overrides a persisted value)
+
+#### Scenario: Non-container runtimes still default trust disabled
+
+- **WHEN** a non-`--docker` runtime starts with no explicit `trustServeIdentity`
+- **THEN** identity trust is disabled and `tailscale-user-*` headers are ignored on every
+  ingress
+
+#### Scenario: The direct loopback ingress is bearer-only even with trust enabled
+
+- **WHEN** `trustServeIdentity` is enabled AND a request presenting the full serve markers
+  and an allowlisted identity arrives on the direct loopback-TCP ingress rather than the
+  dedicated serve ingress
+- **THEN** the identity is not trusted on that ingress and the request is rejected unless
+  it carries a valid bearer token
 
 #### Scenario: Identity headers never reach handlers as trusted unless admitted
 
 - **WHEN** any request presents `tailscale-user-*` headers
 - **THEN** they are not exposed to route handlers as a trusted identity unless admitted by
-  the rules above
+  the rules above (on the dedicated serve ingress, with trust enabled and an allowlisted
+  login)
+
+#### Scenario: A host-reachable serve ingress is never identity-eligible
+
+- **WHEN** a serve ingress is bound outside the container-isolated runtime (host-reachable,
+  no no-host-publication assertion) AND a request arrives on it carrying the full serve
+  markers and an allowlisted `tailscale-user-login`
+- **THEN** the identity path does not admit it — those forged markers grant nothing on a
+  host-reachable serve port — and the request is rejected unless it carries a valid bearer
+  token
 
 ### Requirement: Strict CORS
 

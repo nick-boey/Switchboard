@@ -124,7 +124,7 @@ export function ReposHome({ client: injected, onNewRepository }: ReposHomeProps)
   const cloned = useQuery({
     queryKey: ['cloned-repos'],
     queryFn: async (): Promise<{ repos: RepoTarget[] }> => {
-      const res = await client.repos.cloned.$get();
+      const res = await client.api.repos.cloned.$get();
       if (!res.ok) throw new Error(`cloned repos failed: ${res.status}`);
       return res.json();
     },

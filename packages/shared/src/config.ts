@@ -98,8 +98,14 @@ export const configSchema = z.object({
    * `tailscale-user-*` headers are ignored regardless of markers.
    */
   trustServeIdentity: z.boolean().default(false),
-  /** Allowlisted serve identities admitted without a bearer token (when trust is on). */
-  identityAllowlist: z.array(z.string()).default(['nick-boey@github']),
+  /**
+   * Allowlisted serve identities admitted without a bearer token (when trust is on). Defaults
+   * **empty** (serve-web-spa F1): no baked-in identity, so even with `trustServeIdentity` on
+   * (the `--docker` first-run default) nobody is admitted (`403`) until the operator adds their
+   * own tailnet login. Affects fresh bootstraps only; an existing config's persisted allowlist
+   * is preserved.
+   */
+  identityAllowlist: z.array(z.string()).default([]),
   /**
    * The runtime listen specification (`runtime-cli-docker` Decision 2/4). Defaults to the prior
    * loopback-TCP-only shape (direct ingress, ephemeral port) so existing configs stay valid.

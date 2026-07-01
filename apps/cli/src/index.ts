@@ -1,5 +1,4 @@
 import type {
-  AppConfig,
   RuntimeContext,
   RuntimeLogger,
   RuntimeTelemetry,
@@ -10,7 +9,7 @@ import { bootstrap } from './bootstrap.js';
 import { resolveAuthKeyFile } from './authkey.js';
 import { superviseServer } from './supervisor.js';
 import { createRuntimeRunner } from './runtime-runner.js';
-import { DEFAULT_SERVE_PORT, runDockerBringUp } from './docker.js';
+import { buildDockerContext, runDockerBringUp } from './docker.js';
 
 /**
  * `switchboard` CLI — the runtime's control plane (`runtime-cli-docker` Decision 1).
@@ -98,23 +97,14 @@ async function runDocker(): Promise<number> {
   const { config, configDir, assertNoHostPublication } = bootstrap({
     assertNoHostPublication: true,
   });
-  const servePort = config.listen.serve?.port ?? DEFAULT_SERVE_PORT;
-  // The server must bind the dedicated serve ingress `tailscale serve` proxies to; keep the direct
-  // ingress too for in-container probing (Decision 6 step 3).
-  const dockerConfig: AppConfig = {
-    ...config,
-    listen: { direct: config.listen.direct ?? { port: 0 }, serve: { port: servePort } },
-  };
-  const ctx: RuntimeContext = {
-    // Workspace == config dir (`/root/.switchboard`, the mounted volume) so repos/ + operations/
-    // persist across container restarts — not the ephemeral WORKDIR.
-    workspaceRoot: configDir,
-    config: dockerConfig,
+  // Build the docker context (serve ingress pinned + `webRoot` at the bundled SPA); see docker.ts.
+  const { ctx, servePort } = buildDockerContext({
+    config,
+    configDir,
+    assertNoHostPublication,
     logger,
     telemetry,
-    identity: { login: null, source: 'none' },
-    assertNoHostPublication,
-  };
+  });
 
   return runDockerBringUp({
     runner: createRuntimeRunner(),

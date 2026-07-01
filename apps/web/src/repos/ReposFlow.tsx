@@ -21,7 +21,7 @@ export function ReposFlow({ client: injected }: ReposFlowProps) {
 
   const startClone = useMutation({
     mutationFn: async (target: string): Promise<OperationStatus> => {
-      const res = await client.repos.clone.$post({ json: { target } });
+      const res = await client.api.repos.clone.$post({ json: { target } });
       if (!res.ok) throw new Error(`clone failed: ${res.status}`);
       return res.json();
     },

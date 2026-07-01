@@ -99,16 +99,56 @@ model {
       // The new read: the resolver reads the bridge id from the state file the `claude` process
       // maintains on the host (the TmuxHost domain), matched by the launch-assigned session UUID.
       sessionLinkResolver -> TmuxHost "Reads the cloud bridge session id from claude's per-session state file (~/.claude/sessions/<pid>.json), matched by the launch-assigned session UUID"
+
+      // Component built by serve-web-spa (graduated from Planned/serve-web-spa.c4): the API serves
+      // the built Web SPA bundle publicly, ahead of the reject-by-default auth gate.
+      spaStaticHost = component 'SPA Static Host' {
+        description 'Serves the built Web SPA bundle from the runtime image: static assets by path, and index.html as a history fallback for unknown non-API GET paths (the SPA clean-path requirement page-routing hands off). Served PUBLICLY, ahead of the reject-by-default auth gate (the bundle carries no secrets). The boundary is STRUCTURAL, not a maintained prefix list: all protected routes live under a reserved /api/* namespace (gated, reject-by-default), and every non-/api path is the public SPA — so a new API route is auto-gated and clean paths (/, /new-repo, /<owner>/<repo>) never collide. The SPA self-derives its same-origin /api base and sends no token — Tailscale serve identity authorises its calls.'
+        technology 'Hono, @hono/node-server serveStatic'
+      }
     }
 
     Cli = container 'CLI' {
-      description 'The `switchboard` bin. Builds a RuntimeContext and calls the server start(ctx) for a local run (Docker/Tailscale orchestration deferred to runtime-cli-docker).'
+      description 'The `switchboard` bin: builds a RuntimeContext, supervises the server start(ctx) for a local run, and runs the `--docker` in-container bring-up of userspace tailscaled + the pinned `tailscale serve`.'
       technology 'TypeScript, tsup'
+
+      // Components built by runtime-cli-docker (graduated from Planned/runtime-cli-docker.c4).
+      configBootstrap = component 'Config Bootstrap' {
+        description 'The runtime provisioning front door: wraps loadConfig() (config.json 600, run/ + secrets/ dirs 700) idempotently and enforces the mode-aware cross-field rule — trustServeIdentity + a serve ingress is rejected unless the runtime asserts no host publication (--docker) — failing fast before any listener binds. Mode is a bootstrap input; the shared schema stays mode-agnostic.'
+        technology 'TypeScript, Zod'
+      }
+
+      serverSupervisor = component 'Server Supervisor' {
+        description 'Supervises the imported server start(ctx): SIGINT/SIGTERM -> graceful close releasing every ingress (no restart); an unexpected stop (rejected start or whenClosed settling) -> bounded exponential backoff restart, giving up non-zero past a ceiling so a fault is surfaced rather than crash-looped.'
+        technology 'TypeScript'
+      }
+
+      dockerBringUp = component 'Docker Bring-up' {
+        description 'The in-container supervisor (start --docker): asserts Tailscale >= v1.50.0, starts userspace tailscaled (no NET_ADMIN/TUN), tailscale up from the mounted auth-key secret, starts the server on the dedicated loopback serve ingress, then runs the pinned `tailscale serve --bg --https=443 http://127.0.0.1:<servePort>`. Supervises tailscaled as a child and forwards shutdown signals to it. All bring-up steps go through an injectable runner so the wiring is testable without real Docker/Tailscale.'
+        technology 'TypeScript, child_process'
+      }
+
+      // Bootstrap feeds the supervised local run and the docker bring-up.
+      serverSupervisor -> configBootstrap 'Runs the bootstrapped, validated config + no-host-publication assertion'
+      dockerBringUp -> configBootstrap 'Bootstraps with assertNoHostPublication=true (container isolation)'
+      // The docker bring-up reuses the same server supervisor for start(ctx).
+      dockerBringUp -> serverSupervisor 'Reuses the supervisor for the server on the dedicated serve ingress'
+
+      // Realises the base model's `Cli -> Api 'Boots a local run via start(ctx)'` at the component level.
+      serverSupervisor -> Switchboard.Api 'Supervises the imported start(ctx) over its dual ingress'
+
+      // The docker bring-up drives Tailscale: userspace tailscaled, tailscale up, the pinned serve.
+      dockerBringUp -> Tailscale 'Brings up userspace tailscaled, tailscale up (mounted auth key), and the pinned `tailscale serve` (>= v1.50.0)'
     }
 
     // Relationships that exist in the foundations skeleton today.
     WebSPA -> Api 'Calls over the typed Hono RPC client (TanStack Query)'
     Cli -> Api 'Boots a local run via start(ctx)'
+
+    // Production delivery (graduated from serve-web-spa): the API hosts the SPA bundle the browser
+    // runs — no separate web host / Vite in production. The running SPA then calls back over the
+    // `WebSPA -> Api` edge above, same-origin, authorised by Tailscale serve identity.
+    Api -> WebSPA 'Serves the built SPA bundle (static assets + index.html history fallback) over the Tailscale serve ingress — public; API routes stay gated'
   }
 
   // --- External systems ----------------------------------------------------
@@ -135,8 +175,10 @@ model {
 
   // --- Cross-boundary relationships ----------------------------------------
 
-  // Network ingress: the API binds to loopback; serve is the exclusive front door.
-  Tailscale -> Api 'Proxies inbound requests to the loopback API (tailscale serve)'
+  // Network ingress: the API binds to loopback; serve is the exclusive front door. Realised by
+  // runtime-cli-docker over the dedicated, non-host-published loopback serve port (the bind-time
+  // identity-trust property), graduated from Planned/runtime-cli-docker.c4.
+  Tailscale -> Api 'HTTPS/443 -> the dedicated loopback-TCP serve ingress (http://127.0.0.1:<servePort>); no API port is published to the host, so serve is the sole ingress'
 
   // Intended integrations — scaffolded in foundations, behaviour lands in changes 3–6.
   Api -> GitHub 'Clones repositories and reads/writes pull requests' {
