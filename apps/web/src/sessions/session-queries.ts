@@ -24,7 +24,7 @@ export async function fetchLiveSessions(
   repoId: string,
 ): Promise<Map<string, SessionSummary>> {
   const [owner, repo] = repoId.split('/');
-  const res = await client.sessions[':owner'][':repo'].$get({ param: { owner, repo } });
+  const res = await client.api.sessions[':owner'][':repo'].$get({ param: { owner, repo } });
   if (!res.ok) throw new Error(`session list failed: ${res.status}`);
   const body = await res.json();
   return new Map(body.sessions.map((s) => [s.wtId, s]));
@@ -36,7 +36,7 @@ export async function requestLaunch(
   repoId: string,
   wtId: string,
 ): Promise<SessionLaunchStatus> {
-  const res = await client.sessions.launch.$post({ json: { repoId, wtId } });
+  const res = await client.api.sessions.launch.$post({ json: { repoId, wtId } });
   if (!res.ok) throw new Error(`session launch failed: ${res.status}`);
   return res.json();
 }
@@ -53,7 +53,7 @@ export async function fetchLaunchStatus(
   wtId: string,
 ): Promise<SessionLaunchStatus | null> {
   const [owner, repo] = repoId.split('/');
-  const res = await client.sessions[':owner'][':repo'][':wtId'].status.$get({
+  const res = await client.api.sessions[':owner'][':repo'][':wtId'].status.$get({
     param: { owner, repo, wtId },
   });
   // 404 = no launch op recorded yet (the poll keeps waiting). Capture the code into a local so the
@@ -70,6 +70,6 @@ export async function requestStop(
   repoId: string,
   wtId: string,
 ): Promise<void> {
-  const res = await client.sessions.stop.$post({ json: { repoId, wtId } });
+  const res = await client.api.sessions.stop.$post({ json: { repoId, wtId } });
   if (!res.ok) throw new Error(`session stop failed: ${res.status}`);
 }

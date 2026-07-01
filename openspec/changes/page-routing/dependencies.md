@@ -1,43 +1,41 @@
 ---
-depends-on: []
+depends-on:
+  - serve-web-spa
 ---
 
-No blocking dependencies. This change is a self-contained, web-only slice that works under
-the current Vite serving path (dev + `vite preview`, both of which provide history-API
-fallback for clean paths).
+## Why `serve-web-spa`
 
-Relationship to `runtime-cli-docker` (the other active change) is a **constraint, not a
-dependency**: clean browser-history paths require that whoever serves the *built* SPA in
-production returns `index.html` as a history fallback for unknown paths, and production
-serving is owned by `runtime-cli-docker`. Neither change blocks the other — page-routing
-ships and is fully verifiable today under Vite (dev + `preview`, which both provide the
-fallback) — so this is intentionally **not** listed in `depends-on`. The requirement is
-captured as a `web-navigation` spec scenario ("a page survives a reload") rather than as an
-ordering constraint.
+This change is a self-contained, web-only slice that is fully implementable and verifiable
+**today** under the Vite serving path (dev + `vite preview`, both of which provide a
+history-API fallback for clean paths). Its only cross-change tie is the
+**production-fallback archive gate**: clean browser-history deep links (`/<owner>/<repo>`,
+`/new-repo`) must survive a reload in production, which requires that whoever serves the
+*built* SPA returns `index.html` as a history fallback for unknown non-`/api` paths —
+otherwise those paths 404 in production even though they pass under Vite.
 
-**Archive-gating obligation on `runtime-cli-docker`** (Codex Artifacts-review findings ② and,
-re-raised, the high finding on the re-planned artifacts): when a server serves the built SPA in
-production it **must** return `index.html` as a history fallback for unknown non-API paths, or
-deep-linked / reloaded clean paths (`/<owner>/<repo>`, `/new-repo`) will 404 in production even
-though they pass under Vite dev/preview.
+That production SPA host is owned by **`serve-web-spa`** (static asset serving +
+`index.html` history fallback over the Tailscale serve ingress, with its own verification).
+`page-routing` therefore carries **`depends-on: [serve-web-spa]`** above. The edge gates
+**archive, not implementation**: page-routing ships and is fully verifiable now under Vite,
+but it cannot archive until `serve-web-spa` archives — at which point the production fallback
+exists and has been verified.
 
-**Current state (verified 2026-06-28):** `runtime-cli-docker`'s `plan.md` states it "serves the
-SPA on the tailnet," but its specs and tasks (`app-runtime`, `cli-runtime`, `container-runtime`,
-`api-auth-gate`) define **no** static-SPA-serving or `index.html`-history-fallback requirement
-or task — and `apps/server/src/app.ts` exposes only API routes. So the obligation page-routing
-hands off is **not yet specced or owned anywhere**, and production reload/deep-link support is
-currently **unmet**.
+> **History:** the original plan expected `runtime-cli-docker` to add production SPA serving,
+> but that change shipped API-only with no static-serving / history-fallback spec or task. The
+> obligation was therefore moved to the dedicated `serve-web-spa` change, and this dependency
+> was re-pointed from `runtime-cli-docker` to `serve-web-spa` accordingly.
 
-**Resolution (decided 2026-06-28):** keep this change **un-blocked for implementation** — its
-`web-navigation` behaviour is fully implementable and verifiable today under Vite, whose dev +
-`preview` paths both provide the history fallback (the spec's load/reload requirement now states
-this dependence on the serving host explicitly). But the obligation is escalated from a soft
-"forward constraint" to an **explicit archive gate** (`tasks.md` 6.2): page-routing MUST NOT
-archive until the production SPA host provides + verifies the fallback. The follow-up on the
-`runtime-cli-docker` side — adding a SPA-static-serving + history-fallback spec/task to *that*
-change — is that change's work (do it in its stage, not here); once its scope is confirmed to
-cover it, add the `depends-on: [runtime-cli-docker]` edge above so the gate is mechanical.
+## Archive condition
 
-No capability overlap: `runtime-cli-docker` carries delta specs for `api-auth-gate`,
-`app-runtime`, `cli-runtime`, and `container-runtime`; this change introduces only
-`web-navigation`.
+`page-routing` MUST NOT archive until `serve-web-spa` is archived. This single condition
+matches the `depends-on: [serve-web-spa]` edge above and is mechanical — standard dependency
+tooling reports page-routing as archive-blocked until serve-web-spa archives. The discharge
+is verified by `serve-web-spa`'s own production-fallback tasks (`GET /` and a deep-link reload
+both return `index.html`; `GET /api/...` unauthenticated → `401`), so page-routing does not
+re-verify the fallback itself.
+
+## Capability-overlap check
+
+No spec overlap. `serve-web-spa` introduces the new `web-app-serving` capability (server-side
+SPA delivery) and modifies `api-auth-gate` / `container-runtime`; page-routing carries only
+`web-navigation`. The sole tie between them is the archive-gate handoff above.

@@ -167,7 +167,7 @@ describe('telemetryMiddleware (semconv span per request)', () => {
     const wtId = idForBranch(branch); // `<slug>--<hash>` — slug = `fix-cve-2026-private-embargo`
     const slug = wtId.split('--')[0];
 
-    const res = await app.request(`/worktrees/acme/infra/${wtId}/status`, {
+    const res = await app.request(`/api/worktrees/acme/infra/${wtId}/status`, {
       headers: { Authorization: 'Bearer test-bearer-token' },
     });
     // No such operation on disk → 404, but the request is still traced.
@@ -184,7 +184,7 @@ describe('telemetryMiddleware (semconv span per request)', () => {
     expect(haystack).not.toContain(slug);
     expect(haystack).not.toContain(wtId);
     // The low-cardinality template IS recorded (proves the route was traced, not dropped).
-    expect(spans.some((s) => s.name === 'GET /worktrees/:owner/:repo/:wtId/status')).toBe(true);
+    expect(spans.some((s) => s.name === 'GET /api/worktrees/:owner/:repo/:wtId/status')).toBe(true);
   });
 
   it('console export writes spans to the console (and not elsewhere)', async () => {

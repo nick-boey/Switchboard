@@ -144,7 +144,7 @@ export function GettingReady({ repoId, client: injected, onRetry, onBack }: Gett
   const statusQuery = useQuery({
     queryKey: ['clone-status', repoId],
     queryFn: async (): Promise<OperationStatus> => {
-      const res = await client.repos[':owner'][':repo'].status.$get({ param: { owner, repo } });
+      const res = await client.api.repos[':owner'][':repo'].status.$get({ param: { owner, repo } });
       if (!res.ok) throw new Error(`status failed: ${res.status}`);
       return res.json();
     },
@@ -155,7 +155,7 @@ export function GettingReady({ repoId, client: injected, onRetry, onBack }: Gett
   const abort = useMutation({
     // The abort route returns the terminal `OperationStatus` (200) or a not-found body (404).
     mutationFn: async () => {
-      const res = await client.repos.abort.$post({ json: { repoId } });
+      const res = await client.api.repos.abort.$post({ json: { repoId } });
       return res.json();
     },
     onSuccess: (data) => {

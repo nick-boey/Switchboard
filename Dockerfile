@@ -58,6 +58,12 @@ COPY --from=builder /opt/switchboard /opt/switchboard
 RUN chmod +x /opt/switchboard/dist/index.js \
  && ln -s /opt/switchboard/dist/index.js /usr/local/bin/switchboard
 
+# The built web SPA bundle (serve-web-spa / container-runtime): the builder already produced it via
+# `pnpm -r build`. The `--docker` bring-up points `ctx.webRoot` here (DEFAULT_WEB_ROOT), so the server
+# serves the web app over the serve ingress — no separate web host. A build artifact, never a runtime
+# download. (`.dockerignore` ignores `**/dist` only in the build CONTEXT, not builder-stage outputs.)
+COPY --from=builder /repo/apps/web/dist /opt/switchboard/web
+
 # tailscaled's state + control-socket dirs (the --docker bring-up points tailscaled at these).
 RUN mkdir -p /var/lib/tailscale /var/run/tailscale
 

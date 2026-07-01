@@ -81,11 +81,13 @@ describe('session routes + typed client', () => {
   it('launch: rejects a malformed repoId/wtId with 422 without invoking the handler', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const badRepo = await client.sessions.launch.$post({
+    const badRepo = await client.api.sessions.launch.$post({
       json: { repoId: '../evil', wtId: WT_ID },
     });
     expect(badRepo.status).toBe(422);
-    const badWt = await client.sessions.launch.$post({ json: { repoId: REPO, wtId: 'no-hash' } });
+    const badWt = await client.api.sessions.launch.$post({
+      json: { repoId: REPO, wtId: 'no-hash' },
+    });
     expect(badWt.status).toBe(422);
     expect(fake.calls.launch).toBe(0);
   });
@@ -93,7 +95,7 @@ describe('session routes + typed client', () => {
   it('launch: starts a session and returns the launch (starting) status', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.sessions.launch.$post({ json: { repoId: REPO, wtId: WT_ID } });
+    const res = await client.api.sessions.launch.$post({ json: { repoId: REPO, wtId: WT_ID } });
     expect(res.status).toBe(200);
     // The launch returns the SESSION launch status (transient `starting`), never `cloning`.
     expect(await res.json()).toMatchObject({ status: 'starting' });
@@ -103,11 +105,11 @@ describe('session routes + typed client', () => {
   it('stop: rejects a malformed request with 422; a valid stop reports stopped', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const bad = await client.sessions.stop.$post({ json: { repoId: REPO, wtId: 'no-hash' } });
+    const bad = await client.api.sessions.stop.$post({ json: { repoId: REPO, wtId: 'no-hash' } });
     expect(bad.status).toBe(422);
     expect(fake.calls.stop).toBe(0);
 
-    const ok = await client.sessions.stop.$post({ json: { repoId: REPO, wtId: WT_ID } });
+    const ok = await client.api.sessions.stop.$post({ json: { repoId: REPO, wtId: WT_ID } });
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ status: 'stopped' });
     expect(fake.calls.stop).toBe(1);
@@ -117,13 +119,13 @@ describe('session routes + typed client', () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
     // `bad~owner` is routable but out of the repo-id charset → the refine fails → 422.
-    const bad = await client.sessions[':owner'][':repo'].$get({
+    const bad = await client.api.sessions[':owner'][':repo'].$get({
       param: { owner: 'bad~owner', repo: 'evil' },
     });
     expect(bad.status).toBe(422);
     expect(fake.calls.list).toBe(0);
 
-    const ok = await client.sessions[':owner'][':repo'].$get({
+    const ok = await client.api.sessions[':owner'][':repo'].$get({
       param: { owner: 'acme', repo: 'widget-factory' },
     });
     expect(ok.status).toBe(200);
@@ -136,13 +138,13 @@ describe('session routes + typed client', () => {
   it('launch-status: rejects malformed input with 422; reports status, 404 when unknown', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const bad = await client.sessions[':owner'][':repo'][':wtId'].status.$get({
+    const bad = await client.api.sessions[':owner'][':repo'][':wtId'].status.$get({
       param: { owner: 'acme', repo: 'widget-factory', wtId: 'no-hash' },
     });
     expect(bad.status).toBe(422);
     expect(fake.calls.status).toBe(0);
 
-    const unknown = await client.sessions[':owner'][':repo'][':wtId'].status.$get({
+    const unknown = await client.api.sessions[':owner'][':repo'][':wtId'].status.$get({
       param: { owner: 'acme', repo: 'widget-factory', wtId: WT_ID },
     });
     expect(unknown.status).toBe(404);
@@ -152,7 +154,7 @@ describe('session routes + typed client', () => {
       operationId: 'op-1',
       status: 'ready',
     };
-    const found = await client.sessions[':owner'][':repo'][':wtId'].status.$get({
+    const found = await client.api.sessions[':owner'][':repo'][':wtId'].status.$get({
       param: { owner: 'acme', repo: 'widget-factory', wtId: WT_ID },
     });
     expect(found.status).toBe(200);
@@ -165,7 +167,7 @@ describe('session routes + typed client', () => {
       status: 'error',
       error: { kind: 'tmux-failure' },
     };
-    const failed = await client.sessions[':owner'][':repo'][':wtId'].status.$get({
+    const failed = await client.api.sessions[':owner'][':repo'][':wtId'].status.$get({
       param: { owner: 'acme', repo: 'widget-factory', wtId: WT_ID },
     });
     expect(failed.status).toBe(200);

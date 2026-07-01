@@ -13,14 +13,17 @@ describe('configSchema', () => {
     });
     expect(parsed.bearerToken).toBe('a-token');
     expect(parsed.trustServeIdentity).toBe(true);
+    expect(parsed.identityAllowlist).toEqual(['nick-boey@github']); // an explicit allowlist is preserved
     expect(parsed.telemetry.exporter).toBe('otlp');
   });
 
-  it('applies first-run defaults: trust off, telemetry none, allowlist seeded', () => {
+  it('applies first-run defaults: trust off, telemetry none, allowlist EMPTY (no baked-in identity)', () => {
     const parsed = configSchema.parse({ bearerToken: 'x' });
     expect(parsed.trustServeIdentity).toBe(false);
     expect(parsed.telemetry.exporter).toBe('none');
-    expect(parsed.identityAllowlist).toContain('nick-boey@github');
+    // serve-web-spa F1: the default allowlist is empty — no baked-in identity. Nobody is admitted
+    // until the operator adds their own login (what makes default-on `--docker` trust safe).
+    expect(parsed.identityAllowlist).toEqual([]);
     expect(parsed.github).toBeNull();
     expect(parsed.cors.allowedOrigins).toEqual([]);
   });

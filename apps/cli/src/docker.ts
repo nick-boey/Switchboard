@@ -1,4 +1,10 @@
-import type { RuntimeLogger, ServerHandle } from '@switchboard/shared';
+import type {
+  AppConfig,
+  RuntimeContext,
+  RuntimeLogger,
+  RuntimeTelemetry,
+  ServerHandle,
+} from '@switchboard/shared';
 import type { RuntimeRunner } from './runtime-runner.js';
 import { superviseServer, type ServerStarter, type SupervisorPolicy } from './supervisor.js';
 
@@ -34,6 +40,47 @@ export const DEFAULT_TAILSCALE_HOSTNAME = 'switchboard';
 
 /** Default dedicated serve-ingress loopback port when the config does not pin one (`--docker`). */
 export const DEFAULT_SERVE_PORT = 4180;
+
+/**
+ * The bundled web SPA path inside the runtime image (serve-web-spa D3/D7 / container-runtime): the
+ * Dockerfile copies `apps/web/dist` here. The `--docker` bring-up points `ctx.webRoot` at it so the
+ * server serves the web app over the serve ingress (a missing bundle degrades to `503`, handled by
+ * the server — never a crash).
+ */
+export const DEFAULT_WEB_ROOT = '/opt/switchboard/web';
+
+/**
+ * Build the `--docker` `RuntimeContext` (serve-web-spa): pin the dedicated serve ingress that
+ * `tailscale serve` proxies to (keeping the direct ingress for in-container probing), carry the
+ * container-isolation assertion (serve-identity eligibility), and point `webRoot` at the bundled
+ * SPA. Extracted so the wiring — especially `webRoot` — is unit-testable without a real bring-up.
+ */
+export function buildDockerContext(params: {
+  config: AppConfig;
+  configDir: string;
+  assertNoHostPublication: boolean;
+  logger: RuntimeLogger;
+  telemetry: RuntimeTelemetry;
+  /** Override the bundled SPA path (defaults to `DEFAULT_WEB_ROOT`). */
+  webRoot?: string;
+}): { ctx: RuntimeContext; servePort: number } {
+  const servePort = params.config.listen.serve?.port ?? DEFAULT_SERVE_PORT;
+  const config: AppConfig = {
+    ...params.config,
+    listen: { direct: params.config.listen.direct ?? { port: 0 }, serve: { port: servePort } },
+  };
+  const ctx: RuntimeContext = {
+    // Workspace == config dir (the mounted volume) so repos/ + operations/ persist across restarts.
+    workspaceRoot: params.configDir,
+    config,
+    logger: params.logger,
+    telemetry: params.telemetry,
+    identity: { login: null, source: 'none' },
+    assertNoHostPublication: params.assertNoHostPublication,
+    webRoot: params.webRoot ?? DEFAULT_WEB_ROOT,
+  };
+  return { ctx, servePort };
+}
 
 export interface DockerBringUpOptions {
   /** The orchestration runner (real in production; the fake in tests). */

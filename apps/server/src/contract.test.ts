@@ -27,7 +27,7 @@ describe('typed API contract', () => {
 
   it('round-trips a valid request through the typed client', async () => {
     const client = await bootClient();
-    const res = await client.echo.$post({ json: { message: 'hello' } });
+    const res = await client.api.echo.$post({ json: { message: 'hello' } });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ message: 'hello', length: 5 });
@@ -36,7 +36,7 @@ describe('typed API contract', () => {
   it('rejects an invalid body with 422 without invoking the handler', async () => {
     const client = await bootClient();
     // Empty message fails Zod; the handler (which would return `length`) must not run.
-    const res = await client.echo.$post({ json: { message: '' } });
+    const res = await client.api.echo.$post({ json: { message: '' } });
     expect(res.status).toBe(422);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body).not.toHaveProperty('length');

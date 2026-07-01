@@ -54,6 +54,14 @@ export interface RuntimeContext {
    * (a host runtime, where any serve ingress is host-reachable and therefore bearer-only).
    */
   assertNoHostPublication?: boolean;
+  /**
+   * Filesystem root of the built web SPA bundle (serve-web-spa). When set, `start(ctx)` serves the
+   * SPA publicly — static assets by path plus an `index.html` history fallback for non-`/api`
+   * GET/HEAD paths — ahead of and outside the auth gate (the bundle carries no secrets). When unset
+   * (local `just run`, every existing unit/E2E harness) the server is API-only, unchanged. The
+   * `--docker` bring-up points this at the bundled image path.
+   */
+  webRoot?: string;
 }
 
 /**

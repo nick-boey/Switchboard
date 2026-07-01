@@ -18,7 +18,11 @@ export type SwitchboardClient = ApiClient<AppType>;
 export function createSwitchboardClient(
   config: SwitchboardRuntimeConfig = readRuntimeConfig(),
 ): SwitchboardClient {
-  return createApiClient<AppType>(config.serverUrl, {
-    headers: { Authorization: `Bearer ${config.bearerToken}` },
-  });
+  // serve-web-spa: omit `Authorization` when tokenless — the served SPA is authorised by Tailscale
+  // serve IDENTITY (no secret in the browser). A configured token (the local `just run` dev path)
+  // is still sent.
+  const headers: Record<string, string> = config.bearerToken
+    ? { Authorization: `Bearer ${config.bearerToken}` }
+    : {};
+  return createApiClient<AppType>(config.serverUrl, { headers });
 }

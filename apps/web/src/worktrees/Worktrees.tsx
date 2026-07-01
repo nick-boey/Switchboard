@@ -111,7 +111,7 @@ export function Worktrees({
   const listQuery = useQuery({
     queryKey: ['worktrees', repoId],
     queryFn: async (): Promise<WorktreeListResponse> => {
-      const res = await client.worktrees[':owner'][':repo'].$get({ param: { owner, repo } });
+      const res = await client.api.worktrees[':owner'][':repo'].$get({ param: { owner, repo } });
       if (!res.ok) throw new Error(`worktree list failed: ${res.status}`);
       return res.json();
     },
@@ -122,7 +122,7 @@ export function Worktrees({
     queryKey: ['wt-create-status', repoId, pendingWtId],
     enabled: pendingWtId !== null,
     queryFn: async (): Promise<OperationStatus> => {
-      const res = await client.worktrees[':owner'][':repo'][':wtId'].status.$get({
+      const res = await client.api.worktrees[':owner'][':repo'][':wtId'].status.$get({
         param: { owner, repo, wtId: pendingWtId! },
       });
       if (!res.ok) throw new Error(`worktree status failed: ${res.status}`);
@@ -141,7 +141,7 @@ export function Worktrees({
 
   const createMut = useMutation({
     mutationFn: async (input: CreateWorktreeInput): Promise<OperationStatus> => {
-      const res = await client.worktrees.create.$post({
+      const res = await client.api.worktrees.create.$post({
         json: { repoId, branch: input.branch, mode: input.mode, base: input.base },
       });
       if (!res.ok) throw new Error(`worktree create failed: ${res.status}`);
@@ -158,7 +158,7 @@ export function Worktrees({
   const deleteMut = useMutation({
     mutationFn: async (wt: WorktreeSummary) => {
       // The MVP delete path is always confirmation-gated → force the (re-checked) removal.
-      const res = await client.worktrees.delete.$post({
+      const res = await client.api.worktrees.delete.$post({
         json: { repoId, wtId: wt.wtId, force: true },
       });
       return res.json();

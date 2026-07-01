@@ -85,7 +85,7 @@ describe('worktree routes + typed client', () => {
   it('create: rejects a malformed repoId with 422 without invoking the handler', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.worktrees.create.$post({
+    const res = await client.api.worktrees.create.$post({
       json: { repoId: '../evil', branch: 'x', mode: 'new' },
     });
     expect(res.status).toBe(422);
@@ -95,7 +95,7 @@ describe('worktree routes + typed client', () => {
   it('create: rejects an empty branch with 422 without invoking the handler', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.worktrees.create.$post({
+    const res = await client.api.worktrees.create.$post({
       json: { repoId: 'acme/infra', branch: '', mode: 'new' },
     });
     expect(res.status).toBe(422);
@@ -105,7 +105,7 @@ describe('worktree routes + typed client', () => {
   it('create: starts a worktree op and returns the in-progress status', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.worktrees.create.$post({
+    const res = await client.api.worktrees.create.$post({
       json: { repoId: 'acme/infra', branch: 'feature/x', mode: 'new' },
     });
     expect(res.status).toBe(200);
@@ -116,7 +116,7 @@ describe('worktree routes + typed client', () => {
   it('list: returns the repo worktrees', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.worktrees[':owner'][':repo'].$get({
+    const res = await client.api.worktrees[':owner'][':repo'].$get({
       param: { owner: 'acme', repo: 'infra' },
     });
     expect(res.status).toBe(200);
@@ -130,7 +130,7 @@ describe('worktree routes + typed client', () => {
     const client = await boot(fake.orchestrator);
     // An out-of-charset owner reaches the validator (a `..` path segment is normalized to 404 by
     // the HTTP layer before routing, so use a non-traversal malformed id to exercise Zod).
-    const res = await client.worktrees[':owner'][':repo'].$get({
+    const res = await client.api.worktrees[':owner'][':repo'].$get({
       param: { owner: 'bad@owner', repo: 'evil' },
     });
     expect(res.status).toBe(422);
@@ -140,7 +140,7 @@ describe('worktree routes + typed client', () => {
   it('delete: rejects malformed input with 422 without invoking the handler', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.worktrees.delete.$post({
+    const res = await client.api.worktrees.delete.$post({
       json: { repoId: 'acme/infra', wtId: 'not a valid id' },
     });
     expect(res.status).toBe(422);
@@ -150,7 +150,7 @@ describe('worktree routes + typed client', () => {
   it('delete: reports success when the removal proceeds', async () => {
     const fake = makeFake();
     const client = await boot(fake.orchestrator);
-    const res = await client.worktrees.delete.$post({
+    const res = await client.api.worktrees.delete.$post({
       json: { repoId: 'acme/infra', wtId: 'feature-x--0123456789ab', force: true },
     });
     expect(res.status).toBe(200);
@@ -162,7 +162,7 @@ describe('worktree routes + typed client', () => {
     const fake = makeFake();
     fake.deleteBehaviour = 'not-safe';
     const client = await boot(fake.orchestrator);
-    const res = await client.worktrees.delete.$post({
+    const res = await client.api.worktrees.delete.$post({
       json: { repoId: 'acme/infra', wtId: 'feature-x--0123456789ab' },
     });
     expect(res.status).toBe(200);
@@ -175,7 +175,7 @@ describe('worktree routes + typed client', () => {
     const fake = makeFake();
     fake.deleteBehaviour = 'not-managed';
     const client = await boot(fake.orchestrator);
-    const res = await client.worktrees.delete.$post({
+    const res = await client.api.worktrees.delete.$post({
       json: { repoId: 'acme/infra', wtId: 'feature-x--0123456789ab', force: true },
     });
     expect(res.status).toBe(200);
@@ -190,7 +190,7 @@ describe('worktree routes + typed client', () => {
       status: 'ready',
     };
     const client = await boot(fake.orchestrator);
-    const ok = await client.worktrees[':owner'][':repo'][':wtId'].status.$get({
+    const ok = await client.api.worktrees[':owner'][':repo'][':wtId'].status.$get({
       param: { owner: 'acme', repo: 'infra', wtId: 'feature-x--0123456789ab' },
     });
     expect(ok.status).toBe(200);

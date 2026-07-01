@@ -27,7 +27,14 @@ export function readRuntimeConfig(): SwitchboardRuntimeConfig {
 
   const env = import.meta.env;
   return {
-    serverUrl: injected?.serverUrl ?? env.VITE_SERVER_URL ?? '',
+    // serve-web-spa: default to the page ORIGIN when nothing is injected — the served SPA is
+    // same-origin, so `hc` always has a valid base (never empty). Injected config / Vite env
+    // (the local `just run` dev path) still take precedence.
+    serverUrl:
+      injected?.serverUrl ??
+      env.VITE_SERVER_URL ??
+      (typeof window === 'undefined' ? '' : window.location.origin),
+    // Empty ⇒ tokenless (serve identity authorises). The dev path injects a bearer token.
     bearerToken: injected?.bearerToken ?? env.VITE_BEARER_TOKEN ?? '',
   };
 }

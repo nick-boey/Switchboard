@@ -48,8 +48,16 @@ export function bootstrap(options: BootstrapOptions = {}): BootstrapResult {
   const assertNoHostPublication = options.assertNoHostPublication ?? false;
 
   // `loadConfig` provisions the dir (700) + `config.json` (600) on first run and validates an
-  // existing one (throwing a field-named error so startup refuses to proceed).
-  const config = loadConfig({ configDir });
+  // existing one (throwing a field-named error so startup refuses to proceed). Under `--docker`
+  // (the container runtime, which asserts no host publication) a FIRST-RUN config is created with
+  // `trustServeIdentity: true` (serve-web-spa F1/D6) — safe because the allowlist defaults empty, so
+  // nobody is admitted until the operator adds a login. This applies ONLY at creation; an existing
+  // config's persisted/absent trust value is respected, so a pre-existing container is never
+  // silently upgraded.
+  const config = loadConfig({
+    configDir,
+    firstRunDefaults: assertNoHostPublication ? { trustServeIdentity: true } : undefined,
+  });
 
   // Provision the run + secrets subdirs (700) — idempotent (a no-op when already present).
   ensureDir(join(configDir, 'run'));

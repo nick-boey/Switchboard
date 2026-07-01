@@ -262,7 +262,7 @@ test('shows the error state when a clone fails', async ({ page }) => {
 // --- API-level ledger/lock invariants (deterministic) ----------------------
 
 function api(server: ServerHandle, path: string, body?: unknown) {
-  return fetch(`${server.url}${path}`, {
+  return fetch(`${server.url}/api${path}`, {
     method: body ? 'POST' : 'GET',
     headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,

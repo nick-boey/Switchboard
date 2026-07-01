@@ -25,7 +25,7 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Expect<T extends true> = T;
 
-type EchoPost = ServerClient['echo']['$post'];
+type EchoPost = ServerClient['api']['echo']['$post'];
 
 type EchoRequest = InferRequestType<EchoPost>['json'];
 type EchoResponse = InferResponseType<EchoPost, 200>;
@@ -39,11 +39,11 @@ export type _EchoResponseContract = Expect<
 // --- repo-clone-browse routes (design Decision 4) ---------------------------
 // The typed client mirrors every repo route; drift from the shared schemas fails the build here.
 
-type ClonePost = ServerClient['repos']['clone']['$post'];
-type AbortPost = ServerClient['repos']['abort']['$post'];
-type ClonedGet = ServerClient['repos']['cloned']['$get'];
-type GithubGet = ServerClient['repos']['github']['$get'];
-type StatusGet = ServerClient['repos'][':owner'][':repo']['status']['$get'];
+type ClonePost = ServerClient['api']['repos']['clone']['$post'];
+type AbortPost = ServerClient['api']['repos']['abort']['$post'];
+type ClonedGet = ServerClient['api']['repos']['cloned']['$get'];
+type GithubGet = ServerClient['api']['repos']['github']['$get'];
+type StatusGet = ServerClient['api']['repos'][':owner'][':repo']['status']['$get'];
 
 // The client sends `{ target }` / `{ repoId }` (the schema INPUT), not the transformed output.
 export type _CloneRequestContract = Expect<
@@ -73,10 +73,10 @@ export type _GithubResponseContract = Expect<
 // --- worktree-management routes (design Decision 8) -------------------------
 // The typed client mirrors every worktree route; drift from the shared schemas fails the build.
 
-type WtCreatePost = ServerClient['worktrees']['create']['$post'];
-type WtDeletePost = ServerClient['worktrees']['delete']['$post'];
-type WtListGet = ServerClient['worktrees'][':owner'][':repo']['$get'];
-type WtStatusGet = ServerClient['worktrees'][':owner'][':repo'][':wtId']['status']['$get'];
+type WtCreatePost = ServerClient['api']['worktrees']['create']['$post'];
+type WtDeletePost = ServerClient['api']['worktrees']['delete']['$post'];
+type WtListGet = ServerClient['api']['worktrees'][':owner'][':repo']['$get'];
+type WtStatusGet = ServerClient['api']['worktrees'][':owner'][':repo'][':wtId']['status']['$get'];
 
 // The create request is the shared schema's shape (no transform): `{ repoId, branch, mode, base? }`.
 export type _WtCreateRequestContract = Expect<
@@ -110,10 +110,10 @@ export type _WtListResponseContract = Expect<
 // --- claude-session-launch routes (design Decision 4 / 8) -------------------
 // The typed client mirrors every session route; drift from the shared schemas fails the build.
 
-type SessLaunchPost = ServerClient['sessions']['launch']['$post'];
-type SessStopPost = ServerClient['sessions']['stop']['$post'];
-type SessListGet = ServerClient['sessions'][':owner'][':repo']['$get'];
-type SessStatusGet = ServerClient['sessions'][':owner'][':repo'][':wtId']['status']['$get'];
+type SessLaunchPost = ServerClient['api']['sessions']['launch']['$post'];
+type SessStopPost = ServerClient['api']['sessions']['stop']['$post'];
+type SessListGet = ServerClient['api']['sessions'][':owner'][':repo']['$get'];
+type SessStatusGet = ServerClient['api']['sessions'][':owner'][':repo'][':wtId']['status']['$get'];
 
 // Launch + stop send the shared `{ repoId, wtId }` shape.
 export type _SessLaunchRequestContract = Expect<

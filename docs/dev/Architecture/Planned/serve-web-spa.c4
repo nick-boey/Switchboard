@@ -1,0 +1,42 @@
+// serve-web-spa — PLANNED architecture overlay (docs-migration.md row).
+//
+// Adds the production DELIVERY of the Web SPA: the API container serves the built SPA bundle
+// (static assets + index.html history fallback) over the existing `Tailscale -> Switchboard.Api`
+// serve ingress, so a phone browser on the tailnet loads the app from the SAME origin it calls.
+// The static bundle is served PUBLICLY (it carries no secrets), ahead of the reject-by-default
+// auth gate; the API routes stay gated, and the SPA's same-origin calls are admitted by Tailscale
+// serve identity (no token in the browser). Every addition is tagged `#todo`; view ids are
+// prefixed `serve-web-spa-*`.
+//
+// Reuses the `component` kind and the `todo` tag from specification.c4 (permanent overlay
+// vocabulary), so this file adds no specification block — it references the base
+// `Switchboard.Api`, `Switchboard.WebSPA`, and `Tailscale`.
+
+model {
+
+  extend Switchboard.Api {
+
+    spaStaticHost = component 'SPA Static Host' {
+      #todo
+      description 'Serves the built Web SPA bundle from the runtime image: static assets by path, and index.html as a history fallback for unknown non-API GET paths (the SPA clean-path requirement page-routing hands off). Served PUBLICLY, ahead of the reject-by-default auth gate (the bundle carries no secrets). The boundary is STRUCTURAL, not a maintained prefix list: all protected routes live under a reserved /api/* namespace (gated, reject-by-default), and every non-/api path is the public SPA — so a new API route is auto-gated and clean paths (/, /new-repo, /<owner>/<repo>) never collide. The SPA self-derives its same-origin /api base and sends no token — Tailscale serve identity authorises its calls.'
+      technology 'Hono, @hono/node-server serveStatic'
+    }
+  }
+
+  // The production delivery edge: the API hosts the SPA bundle the browser runs — no separate web
+  // host / Vite in production. The running SPA then calls back over the existing
+  // `Switchboard.WebSPA -> Switchboard.Api` edge, same-origin, authorised by serve identity.
+  Switchboard.Api -> Switchboard.WebSPA 'Serves the built SPA bundle (static assets + index.html history fallback) over the Tailscale serve ingress — public; API routes stay gated' {
+    #todo
+  }
+}
+
+views {
+
+  view serve-web-spa-delivery of Switchboard {
+    title 'serve-web-spa — SPA served by the API over the serve ingress (planned)'
+
+    include *
+    include Switchboard.Api.*
+  }
+}
