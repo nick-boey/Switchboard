@@ -65,4 +65,12 @@ views {
     include *
     include Switchboard.Cli.*
   }
+
+  // View contributed by serve-web-spa (graduated from its Planned overlay).
+  view serve-web-spa-delivery of Switchboard {
+    title 'serve-web-spa — SPA served by the API over the serve ingress'
+
+    include *
+    include Switchboard.Api.*
+  }
 }

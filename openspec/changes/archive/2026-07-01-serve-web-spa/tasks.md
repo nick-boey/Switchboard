@@ -113,7 +113,7 @@
 - [x] 9.2 `merge → README.md`: note in "Running Switchboard" that the Docker image now
   serves the web UI over the tailnet (no longer API-only). _(Done — Docker-run note now says the
   image bundles + serves the web UI, tokenless via Tailscale identity.)_
-- [ ] 9.3 (archive-time) `merge → docs/dev/Architecture/model.c4`: graduate
+- [x] 9.3 (archive-time) `merge → docs/dev/Architecture/model.c4`: graduate
   `Planned/serve-web-spa.c4` — strip `#todo`, move the `spaStaticHost` component + the
   `Api -> WebSPA` edge into the permanent model (view into `views.c4` if kept), then delete
   the overlay file. _(Deferred to the `switch-openspec-archive` docs-migration step, per the ledger —
