@@ -119,7 +119,9 @@ admit your login:
 
 - Under `--docker`, a **first-run** config is created with `trustServeIdentity: true` and an
   **empty `identityAllowlist`**. Trust is on, but the empty allowlist admits **nobody** (`403`) —
-  a safe default — until you add your own login.
+  a safe default — until you add your own login. When a login is refused, the server logs a
+  **warning naming the rejected login** (`docker logs switchboard`), so you can see exactly which
+  `tailscale-user-login` to add rather than being locked out silently.
 - **Add your tailnet login once.** Set `identityAllowlist` in
   `/root/.switchboard/config.json` (mode `600`) to your Tailscale login, e.g.:
 
@@ -128,7 +130,8 @@ admit your login:
   ```
 
   then `docker restart switchboard`. The web app now loads and its API calls succeed under your
-  identity — no bearer token needed.
+  identity — no bearer token needed. (A valid **bearer token** also still works against the serve
+  URL — handy for an API client, or before your login is allowlisted.)
 - **Upgrading an existing container?** A config provisioned before this change is **never silently
   upgraded**: its persisted `trustServeIdentity` and `identityAllowlist` are respected as-is (an
   absent trust field reads as **off**). To adopt the served-SPA model, set `trustServeIdentity: true`

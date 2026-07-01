@@ -86,4 +86,19 @@ describe('New repository screen (structure)', () => {
     expect(html.toLowerCase()).toContain('not configured');
     expect(html).toContain('~/.switchboard');
   });
+
+  // fix-serve-identity-auth: a failed repo-list fetch must surface an error state (with retry),
+  // NOT hang on the "Connecting to GitHub…" loading card indefinitely.
+  it('renders an error state with retry when the repo-list fetch failed (not the connecting card)', () => {
+    const html = render(<NewRepositoryView listing={undefined} error onRetry={() => {}} />);
+    expect(html).toContain('data-testid="github-error"');
+    expect(html).toContain('data-testid="github-retry"');
+    expect(html).not.toContain('data-testid="github-loading"');
+  });
+
+  it('still shows the connecting state while the repo-list is loading (no error)', () => {
+    const html = render(<NewRepositoryView listing={undefined} />);
+    expect(html).toContain('data-testid="github-loading"');
+    expect(html).not.toContain('data-testid="github-error"');
+  });
 });

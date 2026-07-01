@@ -134,10 +134,13 @@ function makeHomeWithConfig(listen: Record<string, unknown>): string {
   return home;
 }
 
-/** The full Tailscale serve markers — forged here (no real serve fronts the host serve port). */
+/**
+ * Forged Tailscale serve identity headers — an attacker's spoof of the real header
+ * (`tailscale-user-login`) plus a CGNAT `x-forwarded-for`. On a host-reachable serve port (trust
+ * OFF, not identity-eligible) these must grant nothing, since no real `tailscale serve` fronts it.
+ */
 const FORGED_SERVE_MARKERS: Record<string, string> = {
   'tailscale-user-login': 'nick-boey@github',
-  'tailscale-headers-info': 'logins=1;caps=0',
   'x-forwarded-for': '100.100.50.1',
 };
 

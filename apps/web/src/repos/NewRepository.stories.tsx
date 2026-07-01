@@ -71,6 +71,16 @@ export const Unconfigured: Story = {
   ),
 };
 
+/** Error — the repository-list fetch failed; surface an error with retry, not an endless spinner. */
+export const FetchError: Story = {
+  parameters: schemeTest({ viewport: VIEWPORTS.phone }),
+  render: () => (
+    <Frame>
+      <NewRepositoryView listing={undefined} error onRetry={() => {}} />
+    </Frame>
+  ),
+};
+
 /** Dark — the screen resolves the dark scheme. */
 export const Dark: Story = {
   parameters: schemeTest({ colorScheme: 'dark', viewport: VIEWPORTS.phone }),

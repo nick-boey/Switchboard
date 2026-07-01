@@ -53,6 +53,14 @@ function serveMarkers(login: string): Record<string, string> {
   };
 }
 
+/**
+ * The header shape a REAL `tailscale serve` produces: only `tailscale-user-login` (there is no
+ * `tailscale-headers-info` header, and serve does not inject a CGNAT `x-forwarded-for`).
+ */
+function serveLoginOnly(login: string): Record<string, string> {
+  return { 'tailscale-user-login': login };
+}
+
 function postEcho(headers: Record<string, string>) {
   return {
     method: 'POST',
@@ -177,6 +185,65 @@ describe('auth gate', () => {
       postEcho({ ...serveMarkers('nick-boey@github'), authorization: `Bearer ${TOKEN}` }),
     );
     expect(res.status).toBe(200);
+  });
+
+  // --- fix-serve-identity-auth: admission on the REAL `tailscale serve` header shape ------------
+
+  // Regression: a real serve request carries ONLY `tailscale-user-login`. The old gate required a
+  // non-existent `tailscale-headers-info` marker, so every tokenless served-SPA call fell through
+  // to bearer and 401'd. It must now be admitted on the identity-eligible serve ingress.
+  it('serve ingress: a request with ONLY tailscale-user-login (real serve shape) is admitted', async () => {
+    const res = await serveApp({
+      trustServeIdentity: true,
+      identityAllowlist: ['nick-boey@github'],
+    }).request('/api/echo', postEcho(serveLoginOnly('nick-boey@github')));
+    expect(res.status).toBe(200);
+  });
+
+  // Bearer precedence (Codex Artifacts finding): a valid bearer token must still be admitted on the
+  // serve ingress even when Tailscale injects a login that is NOT allowlisted — the non-allowlisted
+  // login must not shadow the bearer path.
+  it('serve ingress: a valid bearer is admitted even with a non-allowlisted login (bearer wins)', async () => {
+    const res = await serveApp({
+      trustServeIdentity: true,
+      identityAllowlist: ['nick-boey@github'],
+    }).request(
+      '/api/echo',
+      postEcho({ ...serveLoginOnly('eve@evil'), authorization: `Bearer ${TOKEN}` }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  // Lockout is observable: a present-but-non-allowlisted login with no bearer is 403, and the
+  // rejected login is logged (warn) so an operator sees they must allowlist it — without leaking
+  // any secret.
+  it('serve ingress: a non-allowlisted login without a bearer → 403 and is logged', async () => {
+    const warnings: Array<{ message: string; attrs?: Record<string, unknown> }> = [];
+    const config: AppConfig = configSchema.parse({
+      bearerToken: TOKEN,
+      cors: { allowedOrigins: [APP_ORIGIN] },
+      trustServeIdentity: true,
+      identityAllowlist: ['nick-boey@github'],
+    });
+    const ctx = makeTestContext({
+      config,
+      assertNoHostPublication: true,
+      logger: {
+        debug: () => {},
+        info: () => {},
+        warn: (message: string, attrs?: Record<string, unknown>) =>
+          warnings.push({ message, attrs }),
+        error: () => {},
+      },
+    });
+    const res = await createApp(ctx, { ingress: serveIngressTrust(ctx) }).request(
+      '/api/echo',
+      postEcho(serveLoginOnly('eve@evil')),
+    );
+    expect(res.status).toBe(403);
+    const logged = JSON.stringify(warnings);
+    expect(logged).toContain('eve@evil');
+    expect(logged).not.toContain(TOKEN);
   });
 
   // The default app build (no ingress option) is bearer-only — the spoof-safe default.
